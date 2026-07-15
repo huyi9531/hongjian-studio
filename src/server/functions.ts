@@ -5,7 +5,7 @@ import { generateNoteContent, generateOutline } from './services/ai.server'
 import { regenerateWorkImage } from './services/generation.server'
 import { publishWork } from './services/publish.server'
 import { getStudioPreferences, saveStudioPreferences } from './services/settings.server'
-import { createWork, getWork, listWorks, updateWork } from './services/work.server'
+import { createWork, deleteWork, getWork, listWorks, updateWork } from './services/work.server'
 import { configuredCapabilities } from './env.server'
 import { seedreamModels, supportedSeedreamSizes } from '@/lib/studio-preferences'
 
@@ -23,6 +23,7 @@ export const sessionFn = createServerFn({ method: 'GET' }).handler(() => ({ auth
 export const signInFn = createServerFn({ method: 'POST' }).validator(z.object({ password: z.string().min(1).max(256) })).handler(({ data }) => { signIn(data.password); return { ok: true } })
 export const listWorksFn = createServerFn({ method: 'GET' }).validator(z.object({ query: z.string().max(120).optional() })).handler(async ({ data }) => { requireAuth(); return listWorks(data.query ?? '') })
 export const getWorkFn = createServerFn({ method: 'GET' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); return getWork(data.workId) })
+export const deleteWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); await deleteWork(data.workId); return { ok: true } })
 export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(async () => { requireAuth(); return { preferences: await getStudioPreferences(), capabilities: configuredCapabilities() } })
 export const saveStudioPreferencesFn = createServerFn({ method: 'POST' }).validator(studioPreferencesSchema).handler(async ({ data }) => { requireAuth(); return saveStudioPreferences(data) })
 const referenceSchema = z.object({

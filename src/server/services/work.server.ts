@@ -1,8 +1,8 @@
 import '@tanstack/react-start/server-only'
-import { and, asc, desc, eq, like } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, like } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { extname, join, resolve, sep } from 'node:path'
 import { db } from '../db/index.server'
 import { publications, workImages, workReferences, works } from '../db/schema'
 import { env } from '../env.server'
@@ -40,7 +40,32 @@ export async function getWork(id: string) {
 }
 
 export async function listWorks(query = '') {
-  return query ? db.select().from(works).where(like(works.topic, `%${query}%`)).orderBy(desc(works.updatedAt)) : db.select().from(works).orderBy(desc(works.updatedAt))
+  const items = query ? await db.select().from(works).where(like(works.topic, `%${query}%`)).orderBy(desc(works.updatedAt)) : await db.select().from(works).orderBy(desc(works.updatedAt))
+  if (!items.length) return []
+  const covers = await db.select({ id: workImages.id, workId: workImages.workId, sourceUrl: workImages.sourceUrl, archivePath: workImages.archivePath })
+    .from(workImages)
+    .where(and(inArray(workImages.workId, items.map(item => item.id)), eq(workImages.pageIndex, 0), eq(workImages.status, 'done')))
+  const coverByWork = new Map(covers.map(cover => [cover.workId, cover.archivePath ? `/api/work-images/${cover.id}` : cover.sourceUrl ?? '']))
+  return items.map(item => ({ ...item, coverImageUrl: coverByWork.get(item.id) ?? '' }))
+}
+
+export async function deleteWork(id: string) {
+  const [existing] = await db.select({ id: works.id }).from(works).where(eq(works.id, id)).limit(1)
+  if (!existing) throw new Error('作品不存在或已被删除')
+
+  await db.delete(publications).where(eq(publications.workId, id))
+  await db.delete(workReferences).where(eq(workReferences.workId, id))
+  await db.delete(workImages).where(eq(workImages.workId, id))
+  await db.delete(works).where(eq(works.id, id))
+
+  const dataRoot = resolve(env.DATA_DIR)
+  const directories = [resolve(dataRoot, 'images', id), resolve(dataRoot, 'references', id)]
+  if (directories.some(directory => !directory.startsWith(`${dataRoot}${sep}`))) throw new Error('作品已删除，但归档目录校验失败')
+  try {
+    await Promise.all(directories.map(directory => rm(directory, { recursive: true, force: true })))
+  } catch (cause) {
+    throw new Error('作品已删除，但归档文件清理失败', { cause })
+  }
 }
 
 export async function updateWork(id: string, payload: Partial<Pick<typeof works.$inferInsert, 'topic' | 'outlineRaw' | 'outlinePages' | 'titles' | 'selectedTitle' | 'copywriting' | 'tags' | 'status'>>) {
