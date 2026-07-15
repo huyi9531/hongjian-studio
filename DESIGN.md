@@ -1,238 +1,181 @@
-# Xiaohongshu Web - Style Reference
+# 红笺创作工作台 - Design System
 
-> A bright, editorial discovery feed held together by one decisive red signal.
+> 保留红笺品牌，用小红书创作服务平台的安静、清晰和高效组织完整创作流程。
 
 **Theme:** light
 
-This is a reverse-engineered reference for the public desktop homepage of [xiaohongshu.com](https://www.xiaohongshu.com), observed on 2026-07-15 at a 1280px viewport. It is not an official Xiaohongshu design specification. The interface begins with a nearly unmodified white canvas and lets user photography supply most of the color. System-native Chinese typography makes the product feel familiar and immediate rather than branded through a custom display face. The main red is concentrated in the brand mark and selected or promotional moments, keeping the feed itself visually quiet. Navigation, search, and utility actions use pale neutral surfaces, no visible borders, and no elevation. Images do the heavy compositional work: compact captions and small author or engagement metadata retreat below them. The characteristic rhythm is the contrast between a fixed, spacious left rail and a dense, rounded-corner masonry feed.
+红笺采用固定工作台外壳：64px 白色顶栏、224px 白色左侧导航，以及浅灰内容画布。主操作红只用于新建、生成、上传和发布；交互蓝负责焦点、进度和数据反馈。页面不依赖大标题或重阴影制造层级，而使用白色内容面、20px 圆角、4px 间距基准和明确的文字透明度。重复内容直接排列在画布上，避免卡片嵌套。原始调研与完整证据保存在 [`themes/xiaohongshu-creator/DESIGN.md`](themes/xiaohongshu-creator/DESIGN.md)。
 
-## Evidence and Scope
+## Color Tokens
 
-- **Public route sampled:** `https://www.xiaohongshu.com/`
-- **Observed environment:** unauthenticated desktop homepage, 1280 x 720 viewport
-- **Direct-file check:** `https://xiaohongshu.com/DESIGN.md`, `https://www.xiaohongshu.com/DESIGN.md`, and lowercase variants each returned `404`.
-- **Confidence:** exact computed values below are observed where noted; layout values inferred from the rendered public viewport are marked *inferred*. No logged-in-only interface was inspected.
-- **States:** the public page did not expose hover, focus, active, or pressed styles without interaction. They are intentionally omitted rather than invented.
+| Role | Value | CSS token |
+|---|---|---|
+| Standard canvas | `#f7f7f7` | `--background` |
+| Creation home canvas | `#eef1f8` | `--background-home` |
+| Content surface | `#ffffff` | `--card` |
+| Quiet surface | `#fafafa` | `--secondary` |
+| Subtle fill | `rgba(0,0,0,0.03)` | `--muted` |
+| Hover fill | `rgba(0,0,0,0.05)` | `--accent` |
+| Primary ink | `rgba(0,0,0,0.85)` | `--foreground` |
+| Description ink | `rgba(0,0,0,0.45)` | `--muted-foreground` |
+| Disabled ink | `rgba(0,0,0,0.20)` | `--disabled-foreground` |
+| Border | `#e6e6e6` | `--border` |
+| Hairline | `rgba(0,0,0,0.08)` | `--hairline` |
+| Brand action | `#ff2442` | `--primary` |
+| Brand hover | `#db0031` | `--primary-hover` |
+| Brand pressed | `#a00020` | `--primary-pressed` |
+| Brand soft | `#ffedeb` | `--primary-soft` |
+| Focus / progress | `#386bff` | `--ring` |
+| Focus ring | `#d0daff` | `--ring-soft` |
+| Success | `#00ab46` | `--success` |
+| Warning | `#fd6321` | `--warning` |
+| Error | `#fb3367` | `--destructive` |
 
-## Tokens - Colors
+## Typography
 
-| Name | Value | Token | Role |
-|---|---|---|---|
-| Canvas White | `#ffffff` | `--color-canvas` | Primary page background |
-| Ink | `#333333` | `--color-ink` | Default text and neutral controls |
-| Ink Soft | `rgba(51, 51, 51, 0.8)` | `--color-ink-soft` | Secondary action text |
-| Search Surface | `rgba(0, 0, 0, 0.03)` | `--color-surface-search` | Search field fill |
-| Navigation Surface | `#f5f5f5` | `--color-surface-selected` | Selected navigation item, inferred from the rendered page |
-| Hairline | `rgba(0, 0, 0, 0.06)` | `--color-hairline` | Use only where a quiet separator is necessary; no border was observed on primary controls |
-| Brand Red | `#ff2442` | `--color-brand-red` | Brand mark and selected promotional emphasis |
-| Meta Gray | `#999999` | `--color-ink-muted` | Author, engagement, and supporting metadata, inferred from the rendered page |
+```css
+font-family: RedNum, RedZh, RedEn, "PingFang SC", "Noto Sans SC",
+  "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+```
 
-## Tokens - Typography
+| Role | Size / line-height | Weight |
+|---|---|---|
+| Page title | `24px / 32px` | 600 |
+| Section title | `18px / 26px` | 600 |
+| Card title | `16px / 24px` | 500 |
+| Body | `14px / 22px` | 400 |
+| Metadata | `12px / 18px` | 400 |
 
-### System CJK Sans - native, neutral, and content-first - `--font-sans`
+Letter spacing remains `0`. Operational pages must not use marketing-scale display text.
 
-- **Observed stack:** `system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "PingFang TC", "PingFang HK", "Microsoft Yahei", Arial, sans-serif`
-- **Substitute:** Noto Sans SC, then Inter
-- **Observed weights:** 400, 600
-- **Observed sizes:** 14px, 16px
-- **Observed line heights:** 16.1px, 19.2px
-- **Letter spacing:** browser default (`normal`)
-- **Role:** all public desktop navigation, search, card, and metadata text.
+## Spacing, Radius and Depth
 
-### Type Scale
+- Base spacing: 4px; common values are 8, 12, 16, 20, 24, 32 and 40px.
+- Small controls: 4-8px radius.
+- Media and secondary groups: 12-16px radius.
+- Primary content surfaces: 20px radius (`rounded-2xl`).
+- Buttons and segmented controls: full pill radius.
+- Cards remain flat. Use `0 1px 8px rgba(0,0,0,0.09)` only for dropdowns and `0 9px 20px rgba(0,0,0,0.09)` for larger overlays.
 
-| Role | Size | Line Height | Letter Spacing | Token |
-|---|---:|---:|---|---|
-| meta | 12px | 1.4 | normal | `--text-meta` |
-| card-title | 14px | 1.4 | normal | `--text-card-title` |
-| body | 14px | 1.5 | normal | `--text-body` |
-| control | 16px | 19.2px | normal | `--text-control` |
-| nav | 16px | 19.2px | normal | `--text-nav` |
+## Application Shell
 
-## Tokens - Spacing and Shapes
+### Desktop
 
-**Base unit:** 4px, inferred from the observed 16px and 24px control and layout intervals.
+- Top bar: fixed, 64px, white, subtle bottom hairline.
+- Sidebar: fixed below the top bar, 224px wide, white.
+- Main: begins after the top bar and sidebar, using the standard canvas.
+- Sidebar primary action: red 44px pill labeled “新建创作”.
+- Navigation: 48px rows, 8px radius, neutral selected fill; never use red for the current route.
 
-**Density:** comfortable in navigation; compact in feed metadata.
+### Mobile
 
-### Spacing Scale
-
-| Name | Value | Token |
-|---|---:|---|
-| 4 | 4px | `--space-4` |
-| 8 | 8px | `--space-8` |
-| 12 | 12px | `--space-12` |
-| 16 | 16px | `--space-16` |
-| 20 | 20px | `--space-20` |
-| 24 | 24px | `--space-24` |
-| 32 | 32px | `--space-32` |
-
-### Border Radius
-
-| Element | Value | Token |
-|---|---:|---|
-| Feed image card | 16px | `--radius-card` |
-| Compact icon button | 50% | `--radius-circle` |
-| Search field | 999px | `--radius-search` |
-| Text utility button | 100px | `--radius-pill` |
-
-### Shadows
-
-No `box-shadow` was observed on the sampled search field, utility buttons, or feed-card link. Maintain separation with white space and pale fills rather than elevation.
-
-### Layout
-
-- **Left rail:** approximately 256px wide, fixed on the public desktop viewport (*inferred*).
-- **Main content inset:** 20px from the rail and viewport edges (*inferred*).
-- **Feed columns:** four at 1280px, with roughly 24px column gaps (*inferred*).
-- **Feed image treatment:** portrait-oriented media blocks, 16px rounded corners.
-- **Header search:** horizontally centered, pill-shaped field; observed `padding: 0 84px 0 16px`.
+- Keep the 64px top bar.
+- Hide the fixed sidebar and expose the three routes as 44px icon buttons in the header.
+- Switch two-column management grids to one column before compressing editable content.
 
 ## Components
 
-### Brand mark
+### Primary Button
 
-**Role:** persistent home identity.
+- 44px default height; 40px for compact tool actions.
+- Red fill, white text, full pill radius.
+- Hover `#db0031`; pressed `#a00020`.
+- Focus uses a 2px `#d0daff` ring with offset.
+- Disabled remains visible with a muted red fill and no interaction.
 
-Use `--color-brand-red` (`#ff2442`) as the dominant brand field. The mark is compact and isolated from the content feed, so it can remain the strongest saturated element in the shell.
+### Neutral Button
 
-### Search field
+- White or quiet neutral fill, `#e6e6e6` border where containment is required.
+- Hover uses the 5% black accent fill.
+- Icons use Lucide and include accessible labels or titles when text is hidden.
 
-**Role:** primary entry point for discovery.
+### Input and Textarea
 
-- background: `--color-surface-search` (`rgba(0, 0, 0, 0.03)`)
-- color: `--color-ink` (`#333333`)
-- border: none
-- border-radius: `--radius-search` (`999px`)
-- padding: `0 84px 0 16px`
-- font: 16px / 400 / 19.2px `--font-sans`
-- box-shadow: none
+- White surface, 1px neutral border, 8px radius.
+- Placeholder uses description ink.
+- Focus border is `#386bff` with `#d0daff` ring.
+- Disabled uses the subtle fill and 20% ink rather than opacity-only disappearance.
 
-### Text utility button
+### Page Header
 
-**Role:** top-right contextual actions such as creator or business entry points.
+`WorkspacePageHeader` owns the page title, optional eyebrow/back link, description, status and right-aligned actions. Pages should not recreate this layout independently.
 
-- background: transparent
-- color: `--color-ink-soft`
-- border: none
-- border-radius: `--radius-pill` (`100px`)
-- padding: `0 16px`
-- font: 16px / 600 / 19.2px `--font-sans`
-- box-shadow: none
+### Content Surface
 
-### Circular icon button
+- White, 20px radius, no shadow.
+- Standard padding: 20px mobile and 24px desktop.
+- Use borders only between sections inside a single surface.
 
-**Role:** compact utility action.
+### Image Card
 
-- background: transparent
-- color: `--color-ink-soft`
-- border: none
-- border-radius: `--radius-circle` (`50%`)
-- padding: `0 10px`
-- font: 16px / 600 / 19.2px `--font-sans`
+- Media remains 3:4 with 12-16px radius.
+- Labels and state metadata sit below the image.
+- Regenerate controls appear over media on hover/focus without lifting the full card.
 
-### Side navigation item
+### Empty and Error States
 
-**Role:** switches primary product sections.
+- Center a small icon, concise heading, short description and one recovery action.
+- Keep the state inside one white content surface.
+- Errors use destructive text and retain the failed content context where possible.
 
-The active item sits in a very pale neutral capsule (`--color-surface-selected`, inferred `#f5f5f5`) and pairs a simple outline icon with 16px semibold text. Default items remain on the white canvas; avoid card borders and shadows.
+## Page Patterns
 
-### Channel tab
+### New Work
 
-**Role:** narrows the discovery feed by topic.
+- Use the cool `#eef1f8` canvas.
+- Place the topic editor in one white 20px panel.
+- The editable area uses a 3% black fill and 16px radius.
+- Reference images are 80px thumbnails; “生成大纲” is the sole primary action.
 
-Use plain text on the white canvas. The selected tab should use stronger `--color-ink` weight rather than an oversized container or a competing accent fill. Preserve the short horizontal cadence seen in the category row.
+### Outline Management
 
-### Feed card
+- Two columns on wide screens, one column below the desktop breakpoint.
+- Each page is a white 20px card with a quiet inner editor.
+- Reorder and delete actions remain compact icon buttons.
 
-**Role:** individual photo, video, or editorial note in the discovery masonry.
+### Generation and Results
 
-- media: rounded at `--radius-card` (`16px`)
-- card shell: transparent, no border, no shadow
-- title: 14px regular `--color-ink`
-- author and engagement: smaller `--color-ink-muted`
-- image color: unrestrained; user media is intentionally the page's principal color source
+- Progress uses interaction blue, not brand red.
+- Preserve a 3:4 image grid and explicit waiting, generating, success and failure states.
+- Result editing uses a main column plus a white, sticky QR publishing sidebar.
 
-## Surfaces
+### Works and Settings
 
-| Level | Name | Value | Purpose |
-|---|---|---|---|
-| 0 | Canvas | `#ffffff` | Whole-page background |
-| 1 | Search | `rgba(0, 0, 0, 0.03)` | Input and low-emphasis utility fill |
-| 2 | Selected navigation | `#f5f5f5` (inferred) | Current section affordance |
-| 3 | Content media | User supplied | Feed images and video covers |
+- Works use two-column horizontal management cards without requiring additional cover data.
+- Settings use one white surface divided by hairlines; options use quiet fills and red only for the selected confirmation mark.
 
-## Do's and Don'ts
+### Login
 
-### Do
+- Use the same 64px brand header and standard canvas.
+- Center one white 20px authentication panel.
+- Do not use a marketing hero or split-screen landing layout.
 
-- Keep `--color-canvas` (`#ffffff`) as the default page surface so editorial imagery remains prominent.
-- Reserve `--color-brand-red` (`#ff2442`) for identity and sparse emphasis, not for every action.
-- Use the observed native CJK system stack for Chinese-heavy interface copy.
-- Keep search controls on `--color-surface-search` with `--radius-search` rather than adding an outlined input.
-- Use 16px rounded media through `--radius-card` to preserve the feed's soft image rhythm.
-- Let metadata use `--color-ink-muted` so titles and media retain priority.
-- Separate navigation and feed cards with spacing, not `box-shadow`.
+## Do
 
-### Don't
+- Reserve red for actions that create, generate, upload or publish.
+- Use blue for focus, progress and interactive feedback.
+- Separate sections with canvas contrast and whitespace before adding borders.
+- Keep titles between 16px and 24px.
+- Preserve 44px mobile targets and visible keyboard focus.
+- Keep all business and error states explicit.
 
-- Do not put the feed on gray, blue, or tinted page backgrounds; that competes with user photography and `--color-canvas`.
-- Do not extend `--color-brand-red` to all tabs, labels, and card actions; its scarcity is part of its recognition value.
-- Do not use a custom display font for content cards; `--font-sans` keeps the UI familiar and legible in Chinese.
-- Do not replace the search pill with a square or bordered field; it breaks the observed `999px` control language.
-- Do not add drop shadows to feed cards, side navigation, or utility buttons; no sampled shadow was present.
-- Do not wrap every channel tab in a pill; the category row relies on compact plain text.
-- Do not over-style user media with color overlays or gradients; the media itself supplies the visual variety.
+## Don't
 
-## Imagery
+- Do not copy Xiaohongshu logos, account imagery or campaign artwork.
+- Do not add video, podcast or analytics controls that RedInk cannot execute.
+- Do not add shadows to ordinary cards.
+- Do not nest decorative cards inside other cards.
+- Do not use brand red for route selection or ordinary links.
+- Do not change server APIs, persistence or generation behavior for visual parity.
 
-Photography and video covers are the dominant visual layer. The UI frames them with consistent 16px image corners and minimal chrome, while titles, author rows, and interaction counts stay subordinate. Preserve original imagery without decorative tints; a calm white shell should make a mixed, user-generated feed feel coherent.
+## Verification
 
-## Layout
+Before merging UI changes, run:
 
-The desktop page is a two-part shell: a persistent left navigation rail and a main discovery canvas. The main area starts with a centered search control and utility actions, then a compact horizontal channel row, then a four-column masonry-style feed at the sampled width. On narrower screens, retain the image-first hierarchy and reduce columns before reducing readable text below the 14px card-title baseline.
-
-## Agent Prompt Guide
-
-1. Create a Chinese discovery search bar using `rgba(0, 0, 0, 0.03)` fill, no border or shadow, `999px` radius, 16px native CJK system text, and `0 84px 0 16px` padding.
-2. Create a desktop content-feed shell with a 256px left rail, white canvas, restrained `#ff2442` brand accent, and four transparent image cards with 16px media corners.
-3. Create a feed card with unfiltered user media, 14px `#333333` title text, 12px muted metadata, no card background, border, or shadow.
-
-## Similar Products
-
-- **Pinterest** - image-led masonry discovery with a quiet product shell.
-- **Instagram Explore** - user media dominates while metadata stays compact.
-- **Douyin Web** - Chinese social content discovery with a fixed product navigation layer.
-- **Lemon8** - lifestyle editorial content with photography-first hierarchy.
-
-## Quick Start
-
-```css
-:root {
-  --color-canvas: #ffffff;
-  --color-ink: #333333;
-  --color-ink-soft: rgba(51, 51, 51, 0.8);
-  --color-ink-muted: #999999;
-  --color-surface-search: rgba(0, 0, 0, 0.03);
-  --color-surface-selected: #f5f5f5;
-  --color-hairline: rgba(0, 0, 0, 0.06);
-  --color-brand-red: #ff2442;
-
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft Yahei", Arial, sans-serif;
-  --text-meta: 12px;
-  --text-card-title: 14px;
-  --text-control: 16px;
-
-  --space-4: 4px;
-  --space-8: 8px;
-  --space-12: 12px;
-  --space-16: 16px;
-  --space-24: 24px;
-  --space-32: 32px;
-
-  --radius-card: 16px;
-  --radius-circle: 50%;
-  --radius-pill: 100px;
-  --radius-search: 999px;
-}
+```bash
+pnpm test
+pnpm typecheck
+pnpm build
 ```
+
+Visually inspect login, new work, outline, generation, result, works and settings at 1536x735, 1024x768 and 390x844. Confirm the header/sidebar do not overlap content, grids collapse cleanly, 3:4 media does not distort, and focus/disabled/error states remain legible.
