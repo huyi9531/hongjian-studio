@@ -2,24 +2,30 @@ import '@tanstack/react-start/server-only'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.server'
 import { settings } from '../db/schema'
+import { normalizeSeedreamModel, seedreamModels, supportedSeedreamSizes, type SeedreamModel, type SeedreamSize } from '@/lib/studio-preferences'
 
 const studioPreferencesKey = 'studio_preferences'
 
 export type StudioPreferences = {
-  imageModel: 'seedream-4-5-251128' | 'seedream-5-0-pro-260128'
-  imageSize: '1K' | '2K' | '4K'
+  imageModel: SeedreamModel
+  imageSize: SeedreamSize
   transferToOss: boolean
 }
 
 export const defaultStudioPreferences: StudioPreferences = {
-  imageModel: 'seedream-5-0-pro-260128',
+  imageModel: seedreamModels.pro,
   imageSize: '2K',
   transferToOss: true,
 }
 
 export async function getStudioPreferences(): Promise<StudioPreferences> {
   const [record] = await db.select().from(settings).where(eq(settings.key, studioPreferencesKey)).limit(1)
-  return record ? { ...defaultStudioPreferences, ...(record.value as Partial<StudioPreferences>) } : defaultStudioPreferences
+  if (!record) return defaultStudioPreferences
+  const saved = record.value as Partial<StudioPreferences>
+  const imageModel = normalizeSeedreamModel(saved.imageModel)
+  const sizes = supportedSeedreamSizes(imageModel)
+  const imageSize = saved.imageSize && sizes.includes(saved.imageSize) ? saved.imageSize : '2K'
+  return { imageModel, imageSize, transferToOss: saved.transferToOss ?? true }
 }
 
 export async function saveStudioPreferences(value: StudioPreferences) {

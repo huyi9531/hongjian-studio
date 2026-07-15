@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { env } from '../env.server'
 import type { OutlinePage } from './work.server'
+import type { SeedreamModel, SeedreamSize } from '@/lib/studio-preferences'
 
 async function textCompletion(prompt: string) {
   if (!env.TEXT_API_KEY || !env.TEXT_BASE_URL || !env.TEXT_MODEL) throw new Error('文本模型环境变量未配置')
@@ -30,10 +31,13 @@ export async function generateNoteContent(topic: string, outline: string) {
   return { titles: data.titles?.filter(Boolean).slice(0, 5) ?? [], copywriting: data.copywriting ?? '', tags: data.tags?.filter(Boolean).slice(0, 12) ?? [] }
 }
 
-export async function generateSeedreamImage(prompt: string, model: string, size: string, workId: string, pageIndex: number) {
+export async function generateSeedreamImage(prompt: string, model: SeedreamModel, size: SeedreamSize, workId: string, pageIndex: number) {
   if (!env.VOLCENGINE_API_KEY) throw new Error('火山引擎 API Key 未配置')
   const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${env.VOLCENGINE_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, size }) })
-  if (!response.ok) throw new Error(`图片模型请求失败: ${response.status}`)
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500).replace(/\s+/g, ' ').trim()
+    throw new Error(`图片模型请求失败: ${response.status}${detail ? ` - ${detail}` : ''}`)
+  }
   const data = await response.json() as { data?: Array<{ url?: string }> }
   const sourceUrl = data.data?.[0]?.url
   if (!sourceUrl) throw new Error('图片模型未返回公网 URL')

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { getStudioPreferencesFn, saveStudioPreferencesFn, sessionFn } from '@/server/functions'
+import { seedreamModels, supportedSeedreamSizes } from '@/lib/studio-preferences'
 
 export const Route = createFileRoute('/settings')({
   beforeLoad: async () => { if (!(await sessionFn()).authenticated) throw redirect({ to: '/login' }) },
@@ -14,8 +15,8 @@ export const Route = createFileRoute('/settings')({
 })
 
 const models = [
-  { value: 'seedream-5-0-pro-260128' as const, label: 'Seedream 5.0 Pro', description: '支持 1K、2K' },
-  { value: 'seedream-4-5-251128' as const, label: 'Seedream 4.5', description: '支持 2K、4K' },
+  { value: seedreamModels.pro, label: 'Seedream 5.0 Pro', description: '支持 1K、2K' },
+  { value: seedreamModels.standard, label: 'Seedream 4.5', description: '支持 2K、4K' },
 ]
 
 function SettingsPage() {
@@ -23,7 +24,7 @@ function SettingsPage() {
   const [preferences, setPreferences] = useState(initial.preferences)
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState('')
-  const sizes = preferences.imageModel === 'seedream-5-0-pro-260128' ? ['1K', '2K'] as const : ['2K', '4K'] as const
+  const sizes = supportedSeedreamSizes(preferences.imageModel)
 
   async function save() {
     setPending(true)
