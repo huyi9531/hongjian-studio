@@ -15,6 +15,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudioIndexRouteImport } from './routes/studio/index'
 import { Route as StudioWorkIdRouteImport } from './routes/studio/$workId'
+import { Route as ApiRetryFailedRouteImport } from './routes/api/retry-failed'
+import { Route as ApiGenerateRouteImport } from './routes/api/generate'
+import { Route as ApiWorkImagesImageIdRouteImport } from './routes/api/work-images/$imageId'
 
 const WorksRoute = WorksRouteImport.update({
   id: '/works',
@@ -46,22 +49,43 @@ const StudioWorkIdRoute = StudioWorkIdRouteImport.update({
   path: '/studio/$workId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRetryFailedRoute = ApiRetryFailedRouteImport.update({
+  id: '/api/retry-failed',
+  path: '/api/retry-failed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGenerateRoute = ApiGenerateRouteImport.update({
+  id: '/api/generate',
+  path: '/api/generate',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWorkImagesImageIdRoute = ApiWorkImagesImageIdRouteImport.update({
+  id: '/api/work-images/$imageId',
+  path: '/api/work-images/$imageId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/works': typeof WorksRoute
+  '/api/generate': typeof ApiGenerateRoute
+  '/api/retry-failed': typeof ApiRetryFailedRoute
   '/studio/$workId': typeof StudioWorkIdRoute
   '/studio/': typeof StudioIndexRoute
+  '/api/work-images/$imageId': typeof ApiWorkImagesImageIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/works': typeof WorksRoute
+  '/api/generate': typeof ApiGenerateRoute
+  '/api/retry-failed': typeof ApiRetryFailedRoute
   '/studio/$workId': typeof StudioWorkIdRoute
   '/studio': typeof StudioIndexRoute
+  '/api/work-images/$imageId': typeof ApiWorkImagesImageIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -69,23 +93,46 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/works': typeof WorksRoute
+  '/api/generate': typeof ApiGenerateRoute
+  '/api/retry-failed': typeof ApiRetryFailedRoute
   '/studio/$workId': typeof StudioWorkIdRoute
   '/studio/': typeof StudioIndexRoute
+  '/api/work-images/$imageId': typeof ApiWorkImagesImageIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/login' | '/settings' | '/works' | '/studio/$workId' | '/studio/'
+    | '/'
+    | '/login'
+    | '/settings'
+    | '/works'
+    | '/api/generate'
+    | '/api/retry-failed'
+    | '/studio/$workId'
+    | '/studio/'
+    | '/api/work-images/$imageId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/settings' | '/works' | '/studio/$workId' | '/studio'
+  to:
+    | '/'
+    | '/login'
+    | '/settings'
+    | '/works'
+    | '/api/generate'
+    | '/api/retry-failed'
+    | '/studio/$workId'
+    | '/studio'
+    | '/api/work-images/$imageId'
   id:
     | '__root__'
     | '/'
     | '/login'
     | '/settings'
     | '/works'
+    | '/api/generate'
+    | '/api/retry-failed'
     | '/studio/$workId'
     | '/studio/'
+    | '/api/work-images/$imageId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -93,8 +140,11 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   WorksRoute: typeof WorksRoute
+  ApiGenerateRoute: typeof ApiGenerateRoute
+  ApiRetryFailedRoute: typeof ApiRetryFailedRoute
   StudioWorkIdRoute: typeof StudioWorkIdRoute
   StudioIndexRoute: typeof StudioIndexRoute
+  ApiWorkImagesImageIdRoute: typeof ApiWorkImagesImageIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -141,6 +191,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioWorkIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/retry-failed': {
+      id: '/api/retry-failed'
+      path: '/api/retry-failed'
+      fullPath: '/api/retry-failed'
+      preLoaderRoute: typeof ApiRetryFailedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/generate': {
+      id: '/api/generate'
+      path: '/api/generate'
+      fullPath: '/api/generate'
+      preLoaderRoute: typeof ApiGenerateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/work-images/$imageId': {
+      id: '/api/work-images/$imageId'
+      path: '/api/work-images/$imageId'
+      fullPath: '/api/work-images/$imageId'
+      preLoaderRoute: typeof ApiWorkImagesImageIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -149,8 +220,11 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   WorksRoute: WorksRoute,
+  ApiGenerateRoute: ApiGenerateRoute,
+  ApiRetryFailedRoute: ApiRetryFailedRoute,
   StudioWorkIdRoute: StudioWorkIdRoute,
   StudioIndexRoute: StudioIndexRoute,
+  ApiWorkImagesImageIdRoute: ApiWorkImagesImageIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

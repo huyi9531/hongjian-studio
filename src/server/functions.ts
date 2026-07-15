@@ -1,10 +1,11 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { isAuthenticated, requireAuth, signIn } from './auth.server'
-import { generateNoteContent, generateOutline, generateSeedreamImage } from './services/ai.server'
+import { generateNoteContent, generateOutline } from './services/ai.server'
+import { regenerateWorkImage } from './services/generation.server'
 import { publishWork } from './services/publish.server'
 import { getStudioPreferences, saveStudioPreferences } from './services/settings.server'
-import { createWork, getWork, listWorks, updateWork, upsertImage } from './services/work.server'
+import { createWork, getWork, listWorks, updateWork } from './services/work.server'
 import { configuredCapabilities } from './env.server'
 import { seedreamModels, supportedSeedreamSizes } from '@/lib/studio-preferences'
 
@@ -25,16 +26,29 @@ export const listWorksFn = createServerFn({ method: 'GET' }).validator(z.object(
 export const getWorkFn = createServerFn({ method: 'GET' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); return getWork(data.workId) })
 export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(async () => { requireAuth(); return { preferences: await getStudioPreferences(), capabilities: configuredCapabilities() } })
 export const saveStudioPreferencesFn = createServerFn({ method: 'POST' }).validator(studioPreferencesSchema).handler(async ({ data }) => { requireAuth(); return saveStudioPreferences(data) })
-export const createWorkFn = createServerFn({ method: 'POST' }).validator(z.object({ topic: z.string().trim().min(2).max(300) })).handler(async ({ data }) => { requireAuth(); const outline = await generateOutline(data.topic); const id = await createWork(data.topic, outline.pages, outline.raw); return getWork(id) })
+const referenceSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+  dataUrl: z.string().max(12_000_000).refine(value => /^data:image\/(png|jpeg|webp);base64,/.test(value), '参考图片格式无效'),
+})
+
+export const createWorkFn = createServerFn({ method: 'POST' }).validator(z.object({ topic: z.string().trim().min(2).max(300), references: z.array(referenceSchema).max(5).optional() })).handler(async ({ data }) => {
+  requireAuth()
+  const references = data.references ?? []
+  const outline = await generateOutline(data.topic, references.map(reference => reference.dataUrl))
+  const id = await createWork(data.topic, outline.pages, outline.raw, references)
+  return getWork(id)
+})
 export const updateWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ topic: z.string().trim().min(2).max(300).optional(), outlineRaw: z.string().max(30000).optional(), pages: z.array(pageSchema).min(1).max(18).optional(), selectedTitle: z.string().max(80).optional(), copywriting: z.string().max(1000).optional(), tags: z.array(z.string().trim().min(1).max(32)).max(12).optional() })).handler(async ({ data }) => { requireAuth(); const { workId, pages, ...payload } = data; return updateWork(workId, { ...payload, outlinePages: pages }) })
-export const generateAssetsFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ model: z.enum([seedreamModels.standard, seedreamModels.pro]), size: z.enum(['1K', '2K', '4K']) })).handler(async ({ data }) => {
+export const generateContentFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => {
+  requireAuth()
+  const work = await getWork(data.workId)
+  const content = await generateNoteContent(work.topic, work.outlineRaw)
+  return updateWork(data.workId, { titles: content.titles, selectedTitle: content.titles[0] ?? '', copywriting: content.copywriting, tags: content.tags })
+})
+export const regenerateImageFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ pageIndex: z.number().int().min(0).max(17), model: z.enum([seedreamModels.standard, seedreamModels.pro]), size: z.enum(['1K', '2K', '4K']) })).handler(async ({ data }) => {
   requireAuth()
   if (!supportedSeedreamSizes(data.model).includes(data.size)) throw new Error('该模型不支持所选清晰度')
-  const work = await getWork(data.workId)
-  const contentResult = generateNoteContent(work.topic, work.outlineRaw).then(async content => updateWork(data.workId, { titles: content.titles, selectedTitle: content.titles[0] ?? '', copywriting: content.copywriting, tags: content.tags })).catch(error => ({ contentError: error instanceof Error ? error.message : String(error) }))
-  const imageResults = await Promise.allSettled(work.outlinePages.map(async page => { await upsertImage(data.workId, page.index, { status: 'generating', error: null }); const image = await generateSeedreamImage(`${work.topic}\n${page.content}`, data.model, data.size, data.workId, page.index); await upsertImage(data.workId, page.index, { status: 'done', ...image }); return page.index }))
-  for (const [index, result] of imageResults.entries()) if (result.status === 'rejected') await upsertImage(data.workId, work.outlinePages[index]!.index, { status: 'error', error: result.reason instanceof Error ? result.reason.message : String(result.reason) })
-  await contentResult
-  return getWork(data.workId)
+  return regenerateWorkImage(data.workId, data.pageIndex, data.model, data.size)
 })
 export const publishWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ title: z.string().trim().min(1).max(80), content: z.string().max(1000), transferToOss: z.boolean(), force: z.boolean().optional() })).handler(async ({ data }) => { requireAuth(); return publishWork(data.workId, data.title, data.content, data.transferToOss) })

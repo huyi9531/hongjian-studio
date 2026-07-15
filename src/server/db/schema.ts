@@ -26,6 +26,15 @@ export const workImages = sqliteTable('work_images', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 }, table => [uniqueIndex('work_images_work_page').on(table.workId, table.pageIndex)])
 
+export const workReferences = sqliteTable('work_references', {
+  id: text('id').primaryKey(),
+  workId: text('work_id').notNull().references(() => works.id, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  mimeType: text('mime_type').notNull(),
+  archivePath: text('archive_path').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+})
+
 export const publications = sqliteTable('publications', {
   id: text('id').primaryKey(),
   workId: text('work_id').notNull().references(() => works.id, { onDelete: 'cascade' }),

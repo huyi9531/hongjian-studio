@@ -1,13 +1,319 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Check, ImagePlus, LoaderCircle, PencilLine, Send, Sparkles } from 'lucide-react'
-import { FormEvent, useMemo, useState } from 'react'
+import { ArrowDown, ArrowLeft, ArrowUp, Check, GripVertical, ImagePlus, LoaderCircle, PencilLine, Plus, RefreshCw, Send, Sparkles, Trash2, Upload, X } from 'lucide-react'
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { createWorkFn, generateAssetsFn, getStudioPreferencesFn, publishWorkFn, updateWorkFn } from '@/server/functions'
+import { createWorkFn, generateContentFn, getStudioPreferencesFn, getWorkFn, publishWorkFn, regenerateImageFn, updateWorkFn } from '@/server/functions'
 
 type Work = Awaited<ReturnType<typeof createWorkFn>>
 type Preferences = Awaited<ReturnType<typeof getStudioPreferencesFn>>['preferences']
-export function NewWork() { const [topic, setTopic] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const navigate = useNavigate(); async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { const work = await createWorkFn({ data: { topic } }); await navigate({ to: '/studio/$workId', params: { workId: work.id } }) } catch (cause) { setError(cause instanceof Error ? cause.message : '生成大纲失败') } finally { setBusy(false) } } return <section className="mx-auto grid min-h-[calc(100dvh-64px)] max-w-4xl place-items-center px-5"><form onSubmit={submit} className="w-full max-w-2xl"><p className="mb-3 text-sm font-medium text-primary">图文工作台</p><h1 className="max-w-xl text-3xl font-semibold text-balance sm:text-4xl">从一个主题开始，把图文笔记做完整。</h1><p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">红笺会生成可编辑大纲、配图和笔记文案。创建后，所有内容保存在同一作品中。</p><div className="mt-8 rounded-lg bg-card p-2 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06),0_12px_28px_rgb(73_15_25_/_0.08)]"><Textarea value={topic} onChange={event => setTopic(event.target.value)} placeholder="例如：一人食的快速晚餐清单" className="min-h-28 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0" /><div className="flex items-center justify-between gap-3 border-t pt-2"><span className="text-xs text-muted-foreground">大纲生成后可逐页调整</span><Button type="submit" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}生成大纲</Button></div></div>{error && <p className="mt-3 text-sm text-destructive" role="alert">{error}</p>}</form></section> }
-export function Workbench({ initialWork, preferences }: { initialWork: Work; preferences: Preferences }) { const [work, setWork] = useState(initialWork); const [busy, setBusy] = useState<'save' | 'generate' | 'publish' | null>(null); const [message, setMessage] = useState(''); const [transferToOss, setTransferToOss] = useState(preferences.transferToOss); const pagesText = useMemo(() => work.outlinePages.map(page => page.content).join('\n\n'), [work]); async function save() { setBusy('save'); setMessage(''); try { setWork(await updateWorkFn({ data: { workId: work.id, topic: work.topic, outlineRaw: pagesText, pages: work.outlinePages, selectedTitle: work.selectedTitle, copywriting: work.copywriting, tags: work.tags } })); setMessage('已保存') } catch (cause) { setMessage(cause instanceof Error ? cause.message : '保存失败') } finally { setBusy(null) } } async function generate() { setBusy('generate'); setMessage('图片和文案正在生成，时间取决于模型响应。'); try { setWork(await generateAssetsFn({ data: { workId: work.id, model: preferences.imageModel, size: preferences.imageSize } })); setMessage('生成完成') } catch (cause) { setMessage(cause instanceof Error ? cause.message : '生成失败') } finally { setBusy(null) } } async function publish() { setBusy('publish'); setMessage(''); try { const receipt = await publishWorkFn({ data: { workId: work.id, title: work.selectedTitle || work.topic, content: `${work.copywriting}\n${work.tags.map(tag => `#${tag}`).join(' ')}`.trim(), transferToOss } }); setMessage(`发布页已生成，费用 ${receipt.serviceFee || '以服务方回执为准'} ${receipt.currency}`) } catch (cause) { setMessage(cause instanceof Error ? cause.message : '创建发布页失败') } finally { setBusy(null) } } return <section className="p-4 sm:p-6"><header className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><Link to="/studio" className="text-sm text-muted-foreground hover:text-foreground">创作</Link><h1 className="mt-1 text-xl font-semibold text-balance">{work.topic}</h1></div><div className="flex gap-2"><Button variant="outline" onClick={save} disabled={Boolean(busy)}>{busy === 'save' && <LoaderCircle className="animate-spin" />}保存</Button><Button onClick={generate} disabled={Boolean(busy)}>{busy === 'generate' ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}生成图文</Button></div></header><div className="grid gap-4 xl:grid-cols-[minmax(240px,0.85fr)_minmax(300px,1.25fr)_minmax(240px,0.85fr)]"><section className="rounded-lg bg-card p-4 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06)]"><h2 className="mb-3 text-sm font-semibold">大纲</h2><div className="grid gap-3">{work.outlinePages.map((page, index) => <label key={page.index} className="grid gap-1 text-xs font-medium text-muted-foreground"><span>第 {index + 1} 页</span><Textarea value={page.content} onChange={event => setWork(current => ({ ...current, outlinePages: current.outlinePages.map(item => item.index === page.index ? { ...item, content: event.target.value } : item) }))} className="min-h-28 text-sm leading-6 text-foreground" /></label>)}</div></section><section className="rounded-lg bg-card p-4 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06)]"><h2 className="mb-3 text-sm font-semibold">预览</h2><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-2">{work.outlinePages.map(page => { const image = work.images.find(item => item.pageIndex === page.index); return <article key={page.index} className="aspect-[3/4] overflow-hidden rounded-md bg-muted p-3"><div className="flex h-full flex-col justify-between"><span className="text-xs text-muted-foreground">{image?.status === 'done' ? <Check className="inline size-3 text-primary" /> : image?.status === 'error' ? '失败' : '待生成'}</span>{image?.sourceUrl ? <img className="h-full w-full object-cover" src={image.sourceUrl} alt={`第 ${page.index + 1} 页`} /> : <p className="text-sm leading-6 text-muted-foreground line-clamp-6">{page.content}</p>}</div></article> })}</div></section><section className="rounded-lg bg-card p-4 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06)]"><h2 className="mb-3 text-sm font-semibold">笔记与发布</h2><label className="grid gap-1 text-xs font-medium text-muted-foreground">标题<Input value={work.selectedTitle} onChange={event => setWork(current => ({ ...current, selectedTitle: event.target.value }))} /></label><label className="mt-3 grid gap-1 text-xs font-medium text-muted-foreground">正文<Textarea value={work.copywriting} onChange={event => setWork(current => ({ ...current, copywriting: event.target.value }))} className="min-h-40 text-sm leading-6" /></label><label className="mt-3 grid gap-1 text-xs font-medium text-muted-foreground">标签<Input value={work.tags.join(' ')} onChange={event => setWork(current => ({ ...current, tags: event.target.value.split(/\s+/).map(tag => tag.replace(/^#/, '')).filter(Boolean) }))} /></label><div className="mt-4 flex items-center justify-between text-sm"><span>OSS 转存</span><Switch checked={transferToOss} onCheckedChange={setTransferToOss} /></div><Button className="mt-5 w-full" onClick={publish} disabled={Boolean(busy) || !work.images.some(image => image.status === 'done')}>{busy === 'publish' ? <LoaderCircle className="animate-spin" /> : <Send />}确认计费并创建发布页</Button>{work.publication && <a className="mt-3 flex h-11 items-center justify-center rounded-md border text-sm font-medium hover:bg-muted" href={work.publication.h5Url} target="_blank" rel="noreferrer"><PencilLine size={16} />打开发布页</a>}</section></div>{message && <p className="mt-4 text-sm text-muted-foreground" role="status">{message}</p>}</section> }
+type Page = Work['outlinePages'][number]
+type Stage = 'outline' | 'generating' | 'result'
+type ImageState = { index: number; id?: string; url: string; status: 'pending' | 'generating' | 'retrying' | 'done' | 'error'; error?: string }
+type SseMessage = { event: string; data: Record<string, unknown> }
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('读取参考图片失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function readSse(response: Response, onMessage: (message: SseMessage) => void) {
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null
+    throw new Error(body?.error || `请求失败: ${response.status}`)
+  }
+  if (!response.body) throw new Error('生成接口未返回事件流')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    buffer = blocks.pop() ?? ''
+    for (const block of blocks) {
+      const event = block.match(/^event:\s*(.+)$/m)?.[1]
+      const data = block.match(/^data:\s*(.+)$/m)?.[1]
+      if (event && data) onMessage({ event, data: JSON.parse(data) as Record<string, unknown> })
+    }
+    if (done) break
+  }
+}
+
+function workImageUrl(image: Work['images'][number]) {
+  return image.archivePath ? `/api/work-images/${image.id}` : image.sourceUrl ?? ''
+}
+
+function initialImageStates(work: Work): ImageState[] {
+  return work.outlinePages.map(page => {
+    const image = work.images.find(item => item.pageIndex === page.index)
+    return { index: page.index, id: image?.id, url: image ? workImageUrl(image) : '', status: (image?.status as ImageState['status'] | undefined) ?? 'pending', error: image?.error ?? undefined }
+  })
+}
+
+export function NewWork() {
+  const [topic, setTopic] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [previews, setPreviews] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const navigate = useNavigate()
+  const previewsRef = useRef<string[]>([])
+
+  useEffect(() => { previewsRef.current = previews }, [previews])
+  useEffect(() => () => previewsRef.current.forEach(URL.revokeObjectURL), [])
+
+  function addFiles(nextFiles: File[]) {
+    setError('')
+    const valid = nextFiles.filter(file => ['image/png', 'image/jpeg', 'image/webp'].includes(file.type) && file.size <= 8 * 1024 * 1024)
+    if (valid.length !== nextFiles.length) setError('仅支持 8MB 以内的 PNG、JPG 或 WebP 图片')
+    const available = Math.max(0, 5 - files.length)
+    const accepted = valid.slice(0, available)
+    if (valid.length > available) setError('最多添加 5 张参考图片')
+    setFiles(current => [...current, ...accepted])
+    setPreviews(current => [...current, ...accepted.map(file => URL.createObjectURL(file))])
+  }
+
+  function removeFile(index: number) {
+    URL.revokeObjectURL(previews[index]!)
+    setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))
+    setPreviews(current => current.filter((_, itemIndex) => itemIndex !== index))
+  }
+
+  async function submit(event?: FormEvent) {
+    event?.preventDefault()
+    if (busy || topic.trim().length < 2) return
+    setBusy(true)
+    setError('')
+    try {
+      const references = await Promise.all(files.map(async file => ({ filename: file.name, mimeType: file.type as 'image/png' | 'image/jpeg' | 'image/webp', dataUrl: await fileToDataUrl(file) })))
+      const work = await createWorkFn({ data: { topic, references } })
+      await navigate({ to: '/studio/$workId', params: { workId: work.id } })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '生成大纲失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void submit()
+    }
+  }
+
+  return <section className="mx-auto grid min-h-[calc(100dvh-64px)] max-w-4xl place-items-center px-5 py-10">
+    <form onSubmit={submit} className="w-full max-w-2xl">
+      <p className="mb-3 text-sm font-medium text-primary">图文工作台</p>
+      <h1 className="max-w-xl text-3xl font-semibold text-balance sm:text-4xl">从一个主题开始创作</h1>
+      <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">输入主题，也可以添加参考图片帮助理解内容与视觉方向。</p>
+      <div className="mt-8 rounded-lg bg-card p-2 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06),0_12px_28px_rgb(73_15_25_/_0.08)]">
+        <Textarea value={topic} onChange={event => setTopic(event.target.value)} onKeyDown={handleKeyDown} placeholder="例如：一人食的快速晚餐清单" disabled={busy} className="min-h-28 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
+        {previews.length > 0 && <div className="flex flex-wrap gap-2 border-t p-2">{previews.map((preview, index) => <div key={preview} className="relative size-16 overflow-hidden rounded-md bg-muted"><img src={preview} alt={`参考图 ${index + 1}`} className="size-full object-cover" /><button type="button" aria-label={`移除参考图 ${index + 1}`} onClick={() => removeFile(index)} className="absolute top-0 right-0 grid size-7 min-h-0 place-items-center bg-black/65 text-white"><X className="size-4" /></button></div>)}</div>}
+        <div className="flex items-center justify-between gap-3 border-t pt-2">
+          <label className="grid size-11 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="添加参考图片"><Upload className="size-5" /><input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={busy || files.length >= 5} onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /></label>
+          <span className="mr-auto text-xs text-muted-foreground">参考图 {files.length}/5</span>
+          <Button type="submit" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}生成大纲</Button>
+        </div>
+      </div>
+      {busy && <p className="mt-3 text-sm text-muted-foreground" role="status">正在生成大纲，通常需要 15–30 秒…</p>}
+      {error && <p className="mt-3 text-sm text-destructive" role="alert">{error}</p>}
+    </form>
+  </section>
+}
+
+export function Workbench({ initialWork, preferences }: { initialWork: Work; preferences: Preferences }) {
+  const initialDone = initialWork.outlinePages.length > 0 && initialWork.outlinePages.every(page => initialWork.images.some(image => image.pageIndex === page.index && image.status === 'done'))
+  const [work, setWork] = useState(initialWork)
+  const [stage, setStage] = useState<Stage>(initialDone || initialWork.status === 'result' ? 'result' : initialWork.status === 'generating' || initialWork.images.length ? 'generating' : 'outline')
+  const [images, setImages] = useState<ImageState[]>(initialImageStates(initialWork))
+  const [streamBusy, setStreamBusy] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [message, setMessage] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
+  const saveTimer = useRef<number | null>(null)
+  const firstSave = useRef(true)
+
+  const rawOutline = useMemo(() => work.outlinePages.map(page => page.content).join('\n\n<page>\n\n'), [work.outlinePages])
+
+  async function refreshWork() {
+    const fresh = await getWorkFn({ data: { workId: work.id } })
+    setWork(fresh)
+    setImages(initialImageStates(fresh))
+    return fresh
+  }
+
+  async function saveOutline() {
+    setSaveStatus('saving')
+    try {
+      const saved = await updateWorkFn({ data: { workId: work.id, outlineRaw: rawOutline, pages: work.outlinePages } })
+      setWork(saved)
+      setSaveStatus('saved')
+      return saved
+    } catch (cause) {
+      setSaveStatus('error')
+      setMessage(cause instanceof Error ? cause.message : '保存大纲失败')
+      throw cause
+    }
+  }
+
+  useEffect(() => {
+    if (stage !== 'outline') return
+    if (firstSave.current) { firstSave.current = false; return }
+    if (saveTimer.current) window.clearTimeout(saveTimer.current)
+    setSaveStatus('idle')
+    saveTimer.current = window.setTimeout(() => { void saveOutline() }, 300)
+    return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current) }
+  }, [rawOutline, stage])
+
+  function updatePage(index: number, content: string) {
+    setWork(current => ({ ...current, outlinePages: current.outlinePages.map(page => page.index === index ? { ...page, content } : page) }))
+  }
+
+  function reindex(pages: Page[]) {
+    setWork(current => ({ ...current, outlinePages: pages.map((page, index) => ({ ...page, index })) }))
+  }
+
+  function movePage(from: number, to: number) {
+    if (to < 0 || to >= work.outlinePages.length) return
+    const pages = [...work.outlinePages]
+    const [moved] = pages.splice(from, 1)
+    if (moved) pages.splice(to, 0, moved)
+    reindex(pages)
+  }
+
+  function deletePage(index: number) {
+    if (work.outlinePages.length <= 1 || !window.confirm(`确定删除第 ${index + 1} 页吗？`)) return
+    reindex(work.outlinePages.filter((_, itemIndex) => itemIndex !== index))
+  }
+
+  function addPage() {
+    if (work.outlinePages.length >= 18) return
+    reindex([...work.outlinePages, { index: work.outlinePages.length, type: 'content', content: '[内容]\n请输入这一页的内容' }])
+  }
+
+  function applyStreamMessage(message: SseMessage) {
+    const index = Number(message.data.index)
+    if (message.event === 'progress' && Number.isInteger(index) && index >= 0) setImages(current => current.map(image => image.index === index ? { ...image, status: 'generating', error: undefined } : image))
+    if (message.event === 'complete' && Number.isInteger(index)) setImages(current => current.map(image => image.index === index ? { ...image, status: 'done', url: String(message.data.image_url ?? image.url), error: undefined } : image))
+    if (message.event === 'error') {
+      const error = String(message.data.message ?? '图片生成失败')
+      if (Number.isInteger(index) && index >= 0) setImages(current => current.map(image => image.index === index ? { ...image, status: 'error', error } : image))
+      else setMessage(error)
+    }
+  }
+
+  async function runStream(path: '/api/generate' | '/api/retry-failed', force = false) {
+    setStreamBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workId: work.id, model: preferences.imageModel, size: preferences.imageSize, force }) })
+      let success = false
+      await readSse(response, message => {
+        applyStreamMessage(message)
+        if ((message.event === 'finish' || message.event === 'retry_finish') && message.data.success === true) success = true
+      })
+      await refreshWork()
+      if (success) window.setTimeout(() => setStage('result'), 700)
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : '图片生成失败')
+    } finally {
+      setStreamBusy(false)
+    }
+  }
+
+  async function startGeneration() {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current)
+    await saveOutline()
+    setImages(work.outlinePages.map(page => ({ index: page.index, url: '', status: 'pending' })))
+    setStage('generating')
+    await runStream('/api/generate')
+  }
+
+  async function regenerate(index: number) {
+    if (streamBusy) return
+    setImages(current => current.map(image => image.index === index ? { ...image, status: 'retrying', error: undefined } : image))
+    try {
+      const fresh = await regenerateImageFn({ data: { workId: work.id, pageIndex: index, model: preferences.imageModel, size: preferences.imageSize } })
+      setWork(fresh)
+      setImages(initialImageStates(fresh))
+    } catch (cause) {
+      const error = cause instanceof Error ? cause.message : '重绘失败'
+      setImages(current => current.map(image => image.index === index ? { ...image, status: 'error', error } : image))
+    }
+  }
+
+  return <section className="min-h-[calc(100dvh-64px)] p-4 sm:p-6">
+    {stage === 'outline' && <OutlineStage work={work} saveStatus={saveStatus} onUpdate={updatePage} onMove={movePage} onDelete={deletePage} onAdd={addPage} onStart={() => void startGeneration()} />}
+    {stage === 'generating' && <GenerationStage work={work} images={images} busy={streamBusy} message={message} onBack={() => setStage('outline')} onRetryAll={() => void runStream('/api/retry-failed')} onRegenerate={index => void regenerate(index)} />}
+    {stage === 'result' && <ResultStage work={work} setWork={setWork} images={images} preferences={preferences} busy={streamBusy} message={message} onPreview={setPreviewUrl} onRegenerate={index => void regenerate(index)} />}
+    {previewUrl && <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="图片预览" onClick={() => setPreviewUrl('')}><button className="absolute top-4 right-4 grid size-11 place-items-center rounded-md text-white hover:bg-white/15" aria-label="关闭预览"><X /></button><img src={previewUrl} alt="大图预览" className="max-h-[90dvh] max-w-full object-contain" /></div>}
+  </section>
+}
+
+function OutlineStage({ work, saveStatus, onUpdate, onMove, onDelete, onAdd, onStart }: { work: Work; saveStatus: 'idle' | 'saving' | 'saved' | 'error'; onUpdate: (index: number, content: string) => void; onMove: (from: number, to: number) => void; onDelete: (index: number) => void; onAdd: () => void; onStart: () => void }) {
+  const [dragged, setDragged] = useState<number | null>(null)
+  return <div className="mx-auto max-w-7xl">
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><Link to="/studio" className="text-sm text-muted-foreground hover:text-foreground">创作</Link><div className="mt-1 flex items-center gap-3"><h1 className="text-2xl font-semibold">编辑内容大纲</h1><span className="text-xs text-muted-foreground" role="status">{saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '已自动保存' : saveStatus === 'error' ? '保存失败' : ''}</span></div><p className="mt-2 text-sm text-muted-foreground">{work.topic}</p></div><Button onClick={onStart}><ImagePlus />开始生成图片</Button></header>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{work.outlinePages.map((page, index) => <article key={page.index} draggable onDragStart={() => setDragged(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragged !== null) onMove(dragged, index); setDragged(null) }} className="flex min-h-80 flex-col rounded-lg bg-card p-4 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06)]">
+      <div className="mb-3 flex items-center gap-2 border-b pb-3"><GripVertical className="size-4 cursor-grab text-muted-foreground" /><span className="text-sm font-semibold">第 {index + 1} 页</span><span className="rounded-sm bg-muted px-2 py-1 text-xs text-muted-foreground">{page.type === 'cover' ? '封面' : page.type === 'summary' ? '总结' : '内容'}</span><div className="ml-auto flex"><Button size="icon" variant="ghost" aria-label="上移" disabled={index === 0} onClick={() => onMove(index, index - 1)}><ArrowUp /></Button><Button size="icon" variant="ghost" aria-label="下移" disabled={index === work.outlinePages.length - 1} onClick={() => onMove(index, index + 1)}><ArrowDown /></Button><Button size="icon" variant="ghost" aria-label="删除" disabled={work.outlinePages.length <= 1} onClick={() => onDelete(index)}><Trash2 /></Button></div></div>
+      <Textarea value={page.content} onChange={event => onUpdate(page.index, event.target.value)} className="min-h-56 flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-7 shadow-none focus-visible:ring-0" /><span className="mt-2 text-right text-xs text-muted-foreground">{page.content.length} 字</span>
+    </article>)}<button type="button" onClick={onAdd} disabled={work.outlinePages.length >= 18} className="grid min-h-80 place-items-center rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"><span className="grid justify-items-center gap-2 text-sm"><Plus />添加一页</span></button></div>
+  </div>
+}
+
+function GenerationStage({ work, images, busy, message, onBack, onRetryAll, onRegenerate }: { work: Work; images: ImageState[]; busy: boolean; message: string; onBack: () => void; onRetryAll: () => void; onRegenerate: (index: number) => void }) {
+  const done = images.filter(image => image.status === 'done').length
+  const failed = images.filter(image => image.status === 'error').length
+  const percent = images.length ? Math.round(done / images.length * 100) : 0
+  return <div className="mx-auto max-w-7xl"><header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-2xl font-semibold">生成结果</h1><p className="mt-2 text-sm text-muted-foreground">{busy ? `正在生成，已完成 ${done} / ${images.length} 页` : failed ? `${failed} 张图片生成失败，可点击重试` : `全部 ${images.length} 张图片生成完成`}</p></div><div className="flex gap-2">{failed > 0 && !busy && <Button onClick={onRetryAll}><RefreshCw />一键补全失败图片</Button>}<Button variant="outline" onClick={onBack} disabled={busy}><ArrowLeft />返回大纲</Button></div></header>
+    <section className="rounded-lg bg-card p-4 shadow-[0_0_0_1px_rgb(0_0_0_/_0.06)]"><div className="flex justify-between text-sm"><span>生成进度</span><span className="font-medium text-primary">{percent}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-sm bg-muted"><div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${percent}%` }} /></div>{message && <p className="mt-4 text-sm text-destructive" role="alert">{message}</p>}<ImageGrid images={images} onRegenerate={onRegenerate} disabled={busy} /></section>
+  </div>
+}
+
+function ImageGrid({ images, onRegenerate, onPreview, disabled }: { images: ImageState[]; onRegenerate: (index: number) => void; onPreview?: (url: string) => void; disabled: boolean }) {
+  return <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{images.map(image => <article key={image.index} className="overflow-hidden rounded-md border bg-background"><div className="group relative aspect-[3/4] bg-muted">{image.status === 'done' && image.url ? <><button type="button" className="size-full" onClick={() => onPreview?.(image.url)} aria-label={`预览第 ${image.index + 1} 页`}><img src={image.url} alt={`第 ${image.index + 1} 页`} className="size-full object-cover" /></button><div className="absolute inset-x-0 bottom-0 flex justify-center bg-black/55 p-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"><Button size="sm" variant="secondary" disabled={disabled} onClick={() => onRegenerate(image.index)}><RefreshCw />重新生成</Button></div></> : image.status === 'error' ? <div className="flex size-full flex-col items-center justify-center gap-3 p-4 text-center"><span className="grid size-10 place-items-center rounded-full bg-destructive text-lg font-semibold text-white">!</span><span className="text-sm font-medium">生成失败</span><span className="line-clamp-3 text-xs leading-5 text-destructive">{image.error}</span><Button size="sm" onClick={() => onRegenerate(image.index)} disabled={disabled}>点击重试</Button></div> : <div className="flex size-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">{image.status === 'generating' || image.status === 'retrying' ? <><LoaderCircle className="animate-spin text-primary" />{image.status === 'retrying' ? '重试中…' : '生成中…'}</> : '等待中'}</div>}</div><div className="flex h-11 items-center justify-between px-3 text-xs"><span>Page {image.index + 1}</span><span className={image.status === 'done' ? 'text-primary' : image.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>{image.status === 'done' ? '已完成' : image.status === 'error' ? '失败' : image.status === 'retrying' ? '重试中' : image.status === 'generating' ? '生成中' : '等待中'}</span></div></article>)}</div>
+}
+
+function ResultStage({ work, setWork, images, preferences, busy, message, onPreview, onRegenerate }: { work: Work; setWork: (work: Work) => void; images: ImageState[]; preferences: Preferences; busy: boolean; message: string; onPreview: (url: string) => void; onRegenerate: (index: number) => void }) {
+  const [contentStatus, setContentStatus] = useState<'idle' | 'generating' | 'done' | 'error'>(work.copywriting ? 'done' : 'idle')
+  const [contentError, setContentError] = useState('')
+  const [publishBusy, setPublishBusy] = useState(false)
+  const [publishMessage, setPublishMessage] = useState('')
+  const [transferToOss, setTransferToOss] = useState(preferences.transferToOss)
+
+  async function generateContent() {
+    setContentStatus('generating'); setContentError('')
+    try { const fresh = await generateContentFn({ data: { workId: work.id } }); setWork(fresh); setContentStatus('done') }
+    catch (cause) { setContentError(cause instanceof Error ? cause.message : '内容生成失败'); setContentStatus('error') }
+  }
+
+  async function saveContent(next: Work) {
+    setWork(next)
+    try { setWork(await updateWorkFn({ data: { workId: next.id, selectedTitle: next.selectedTitle, copywriting: next.copywriting, tags: next.tags } })) }
+    catch (cause) { setContentError(cause instanceof Error ? cause.message : '内容保存失败') }
+  }
+
+  async function publish() {
+    setPublishBusy(true); setPublishMessage('')
+    try {
+      const receipt = await publishWorkFn({ data: { workId: work.id, title: work.selectedTitle || work.topic, content: `${work.copywriting}\n${work.tags.map(tag => `#${tag}`).join(' ')}`.trim(), transferToOss } })
+      setPublishMessage(`发布页已生成，费用 ${receipt.serviceFee || '以服务方回执为准'} ${receipt.currency}`)
+      setWork(await getWorkFn({ data: { workId: work.id } }))
+    } catch (cause) { setPublishMessage(cause instanceof Error ? cause.message : '创建发布页失败') }
+    finally { setPublishBusy(false) }
+  }
+
+  return <div className="mx-auto max-w-7xl"><header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-2xl font-semibold">生成结果</h1><p className="mt-2 text-sm text-muted-foreground">全部 {images.length} 张图片生成完成</p></div><Link to="/studio"><Button variant="outline"><Plus />再来一篇</Button></Link></header>
+    {message && <p className="mb-4 text-sm text-destructive">{message}</p>}<ImageGrid images={images} onRegenerate={onRegenerate} onPreview={onPreview} disabled={busy} />
+    <section className="mt-8 border-t pt-8"><h2 className="text-lg font-semibold">标题、文案和标签</h2>{contentStatus === 'idle' && <div className="mt-4 border border-dashed p-8 text-center"><Button onClick={() => void generateContent()}><Sparkles />生成标题、文案和标签</Button></div>}{contentStatus === 'generating' && <div className="mt-4 flex items-center justify-center gap-3 p-10 text-sm text-muted-foreground"><LoaderCircle className="animate-spin" />正在生成标题、文案和标签…</div>}{contentStatus === 'error' && <div className="mt-4 border border-destructive/30 bg-destructive/5 p-6 text-center"><p className="text-sm text-destructive">{contentError}</p><Button className="mt-4" variant="outline" onClick={() => void generateContent()}><RefreshCw />重新生成</Button></div>}{contentStatus === 'done' && <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"><div className="grid gap-4"><div className="rounded-lg border bg-card p-4"><h3 className="text-sm font-semibold">标题</h3><div className="mt-3 grid gap-2">{work.titles.map((title, index) => <button type="button" key={`${title}-${index}`} onClick={() => void saveContent({ ...work, selectedTitle: title })} className={`min-h-11 rounded-md border px-3 text-left text-sm transition-colors ${work.selectedTitle === title ? 'border-primary bg-accent' : 'hover:bg-muted'}`}><span className="mr-2 text-xs text-muted-foreground">{index === 0 ? '推荐' : `备选 ${index}`}</span>{title}</button>)}</div><Input className="mt-3" value={work.selectedTitle} onChange={event => setWork({ ...work, selectedTitle: event.target.value })} onBlur={() => void saveContent(work)} aria-label="发布标题" /></div><div className="rounded-lg border bg-card p-4"><h3 className="text-sm font-semibold">正文</h3><Textarea className="mt-3 min-h-56 leading-7" value={work.copywriting} onChange={event => setWork({ ...work, copywriting: event.target.value })} onBlur={() => void saveContent(work)} /></div><div className="rounded-lg border bg-card p-4"><h3 className="text-sm font-semibold">标签</h3><Input className="mt-3" value={work.tags.join(' ')} onChange={event => setWork({ ...work, tags: event.target.value.split(/\s+/).map(tag => tag.replace(/^#/, '')).filter(Boolean) })} onBlur={() => void saveContent(work)} /></div><Button variant="outline" onClick={() => void generateContent()}><RefreshCw />重新生成文案</Button></div><aside className="h-fit rounded-lg border bg-card p-4"><h3 className="text-sm font-semibold">扫码发布</h3><div className="mt-4 flex items-center justify-between text-sm"><span>OSS 转存</span><Switch checked={transferToOss} onCheckedChange={setTransferToOss} /></div><Button className="mt-5 w-full" onClick={() => void publish()} disabled={publishBusy || !work.selectedTitle || !work.copywriting}>{publishBusy ? <LoaderCircle className="animate-spin" /> : <Send />}确认计费并创建发布页</Button>{publishMessage && <p className="mt-3 text-sm text-muted-foreground" role="status">{publishMessage}</p>}{work.publication && <div className="mt-5 grid justify-items-center gap-3 border-t pt-5"><div className="bg-white p-3"><QRCodeSVG value={work.publication.h5Url} size={164} /></div><a className="inline-flex h-11 items-center gap-2 text-sm font-medium text-primary hover:underline" href={work.publication.h5Url} target="_blank" rel="noreferrer"><PencilLine className="size-4" />打开发布页</a></div>}</aside></div>}</section>
+  </div>
+}
