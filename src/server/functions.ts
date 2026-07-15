@@ -14,7 +14,6 @@ const workIdSchema = z.object({ workId: z.string().uuid() })
 const studioPreferencesSchema = z.object({
   imageModel: z.enum([seedreamModels.standard, seedreamModels.pro]),
   imageSize: z.enum(['1K', '2K', '4K']),
-  transferToOss: z.boolean(),
 }).superRefine((value, context) => {
   const supported = supportedSeedreamSizes(value.imageModel)
   if (!supported.includes(value.imageSize)) context.addIssue({ code: 'custom', path: ['imageSize'], message: '该模型不支持所选清晰度' })
@@ -51,4 +50,4 @@ export const regenerateImageFn = createServerFn({ method: 'POST' }).validator(wo
   if (!supportedSeedreamSizes(data.model).includes(data.size)) throw new Error('该模型不支持所选清晰度')
   return regenerateWorkImage(data.workId, data.pageIndex, data.model, data.size)
 })
-export const publishWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ title: z.string().trim().min(1).max(80), content: z.string().max(1000), transferToOss: z.boolean(), force: z.boolean().optional() })).handler(async ({ data }) => { requireAuth(); return publishWork(data.workId, data.title, data.content, data.transferToOss) })
+export const publishWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ title: z.string().trim().min(1).max(80), content: z.string().max(1000) })).handler(async ({ data }) => { requireAuth(); return publishWork(data.workId, data.title, data.content) })

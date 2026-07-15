@@ -9,13 +9,11 @@ const studioPreferencesKey = 'studio_preferences'
 export type StudioPreferences = {
   imageModel: SeedreamModel
   imageSize: SeedreamSize
-  transferToOss: boolean
 }
 
 export const defaultStudioPreferences: StudioPreferences = {
   imageModel: seedreamModels.pro,
   imageSize: '2K',
-  transferToOss: true,
 }
 
 export async function getStudioPreferences(): Promise<StudioPreferences> {
@@ -25,7 +23,7 @@ export async function getStudioPreferences(): Promise<StudioPreferences> {
   const imageModel = normalizeSeedreamModel(saved.imageModel)
   const sizes = supportedSeedreamSizes(imageModel)
   const imageSize = saved.imageSize && sizes.includes(saved.imageSize) ? saved.imageSize : '2K'
-  return { imageModel, imageSize, transferToOss: saved.transferToOss ?? true }
+  return { imageModel, imageSize }
 }
 
 export async function saveStudioPreferences(value: StudioPreferences) {
