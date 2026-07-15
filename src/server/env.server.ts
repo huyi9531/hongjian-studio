@@ -16,7 +16,11 @@ const envSchema = z.object({
   XHS_PUBLISH_API_URL: z.string().url().default('https://plugin.aiconductor.fun/api/xhs_note_publish'),
 })
 
-export const env = envSchema.parse(process.env)
+const normalizedEnvironment = Object.fromEntries(
+  Object.entries(process.env).map(([key, value]) => [key, value === '' ? undefined : value]),
+)
+
+export const env = envSchema.parse(normalizedEnvironment)
 
 export function configuredCapabilities() {
   return {
