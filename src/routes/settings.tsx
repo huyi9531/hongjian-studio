@@ -1,0 +1,4 @@
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { AppShell } from '@/components/app-shell'
+import { sessionFn } from '@/server/functions'
+export const Route = createFileRoute('/settings')({ beforeLoad: async () => { if (!(await sessionFn()).authenticated) throw redirect({ to: '/login' }) }, component: () => <AppShell><section className="mx-auto max-w-3xl p-5 sm:p-7"><h1 className="text-2xl font-semibold text-balance">设置</h1><div className="mt-7 divide-y rounded-lg bg-card shadow-[0_0_0_1px_rgb(0_0_0_/_0.06)]"><div className="p-5"><h2 className="font-medium">服务凭证</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">模型和发布服务的密钥只从服务端环境变量读取，不会显示、保存或返回到浏览器。</p></div><div className="p-5"><h2 className="font-medium">默认图片模型</h2><p className="mt-2 text-sm text-muted-foreground">当前统一使用 Seedream 5.0 Pro，清晰度为 2K。</p></div></div></section></AppShell> })

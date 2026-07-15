@@ -46,6 +46,8 @@ export async function generateSeedreamImage(prompt: string, model: string, size:
       archivePath = join('images', workId, `${pageIndex}-${randomUUID()}.png`)
       await writeFile(join(env.DATA_DIR, archivePath), Buffer.from(await image.arrayBuffer()))
     }
-  } catch { /* 本地归档失败不影响公网发布 */ }
+  } catch (error) {
+    console.warn('Image archive failed; retaining the original provider URL.', { workId, pageIndex, error: error instanceof Error ? error.message : String(error) })
+  }
   return { sourceUrl, archivePath }
 }

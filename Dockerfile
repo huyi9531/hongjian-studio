@@ -1,70 +1,25 @@
-# ============================================
-# 红墨 AI图文生成器 - Docker 镜像
-# ============================================
-
-# 阶段1: 构建前端
-FROM node:22-slim AS frontend-builder
-
-WORKDIR /app/frontend
-
-# 安装 pnpm
-RUN npm install -g pnpm@10.19.0
-
-# 复制前端依赖文件
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
-
-# 安装依赖
-RUN pnpm install --frozen-lockfile
-
-# 复制前端源码
-COPY frontend/ ./
-
-# 构建前端
-RUN pnpm build
-
-# ============================================
-# 阶段2: 最终镜像
-FROM python:3.11-slim
+FROM node:22-slim AS build
 
 WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build && pnpm prune --prod
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+FROM node:22-slim
 
-# 安装 uv
-RUN pip install --no-cache-dir uv
-
-# 复制 Python 项目配置
-COPY pyproject.toml uv.lock* ./
-
-# 安装 Python 依赖
-RUN uv sync --no-dev
-
-# 复制后端代码
-COPY backend/ ./backend/
-
-# 复制空白配置文件模板（不包含任何 API Key）
-COPY docker/text_providers.yaml ./
-COPY docker/image_providers.yaml ./
-
-# 从构建阶段复制前端产物
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-
-# 创建数据目录
-RUN mkdir -p output history
-
-# 设置环境变量
-ENV FLASK_DEBUG=False
-ENV FLASK_HOST=0.0.0.0
-ENV FLASK_PORT=12398
-
-# 暴露端口
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=12398 \
+    DATABASE_URL=file:./data/hongjian.db \
+    DATA_DIR=./data
+COPY --from=build /app/package.json ./
+COPY --from=build /app/server.mjs ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+RUN mkdir -p data
 EXPOSE 12398
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:12398/api/health')" || exit 1
-
-# 启动命令
-CMD ["uv", "run", "python", "-m", "backend.app"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:12398/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+CMD ["node", "dist/server/server.js"]
