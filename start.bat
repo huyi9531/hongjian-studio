@@ -1,6 +1,23 @@
 @echo off
-:: 红墨 AI图文生成器 - 快捷启动脚本 (Windows)
-:: 自动调用 scripts 目录下的完整脚本
+setlocal
 
 cd /d "%~dp0"
-call scripts\start-windows.bat
+
+where pnpm >nul 2>&1
+if errorlevel 1 (
+  echo [ERROR] pnpm is required. Install Node.js 22.12+ and run: corepack enable
+  exit /b 1
+)
+
+if not exist "node_modules\" (
+  echo [INFO] Installing dependencies...
+  call pnpm install --frozen-lockfile
+  if errorlevel 1 exit /b 1
+)
+
+if not exist ".env.local" (
+  copy ".env.example" ".env.local" >nul
+  echo [INFO] Created .env.local. Configure it before using generation services.
+)
+
+call pnpm dev

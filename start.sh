@@ -1,19 +1,20 @@
-#!/bin/bash
+#!/usr/bin/env sh
+set -eu
 
-# 红墨 AI图文生成器 - 快捷启动脚本
-# 自动检测系统并运行对应平台脚本
+cd "$(dirname "$0")"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is required. Install Node.js 22.12+ and run: corepack enable" >&2
+  exit 1
+fi
 
-case "$(uname -s)" in
-    Darwin)
-        exec "$SCRIPT_DIR/scripts/start-macos.command"
-        ;;
-    Linux)
-        exec "$SCRIPT_DIR/scripts/start-linux.sh"
-        ;;
-    *)
-        echo "未知系统，请手动运行 scripts/ 目录下对应的启动脚本"
-        exit 1
-        ;;
-esac
+if [ ! -d node_modules ]; then
+  pnpm install --frozen-lockfile
+fi
+
+if [ ! -f .env.local ]; then
+  cp .env.example .env.local
+  echo "Created .env.local. Configure it before using generation services."
+fi
+
+exec pnpm dev

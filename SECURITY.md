@@ -23,11 +23,11 @@ Include:
 ## Scope
 
 The following are in scope:
-- Backend API vulnerabilities
+- Server API vulnerabilities
 - Authentication/authorization issues
 - Data exposure risks
 - Injection vulnerabilities (SQL, XSS, command injection)
-- Docker configuration security issues
+- Deployment configuration security issues
 
 The following are out of scope:
 - Third-party API key management (user responsibility)
