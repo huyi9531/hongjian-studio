@@ -11,7 +11,7 @@ async function textCompletion(prompt: string, images: string[] = []) {
   const [preferences, credentials] = await Promise.all([getStudioPreferences(), getModelCredentials()])
   if (!credentials.textApiKey) throw new Error('请先在设置中配置文本模型 API Key')
   const content = images.length ? [{ type: 'text', text: prompt }, ...images.map(imageUrl => ({ type: 'image_url', image_url: { url: imageUrl } }))] : prompt
-  const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${credentials.textApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: preferences.textModel, messages: [{ role: 'user', content }], temperature: 0.8 }) })
+  const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${credentials.textApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: preferences.textModel, messages: [{ role: 'user', content }], thinking: { type: preferences.textThinkingEnabled ? 'enabled' : 'disabled' }, temperature: 0.8 }) })
   if (!response.ok) throw new Error(`文本模型请求失败: ${response.status}`)
   const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
   return json.choices?.[0]?.message?.content?.trim() ?? ''

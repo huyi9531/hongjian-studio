@@ -2,13 +2,14 @@ import '@tanstack/react-start/server-only'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.server'
 import { settings } from '../db/schema'
-import { imagePromptModes, normalizeImagePromptMode, normalizeSeedreamModel, normalizeTextModel, seedreamModels, supportedSeedreamSizes, textModels, type ImagePromptMode, type SeedreamModel, type SeedreamSize, type TextModel } from '@/lib/studio-preferences'
+import { imagePromptModes, normalizeImagePromptMode, normalizeSeedreamModel, normalizeTextModel, normalizeTextThinkingEnabled, seedreamModels, supportedSeedreamSizes, textModels, type ImagePromptMode, type SeedreamModel, type SeedreamSize, type TextModel } from '@/lib/studio-preferences'
 
 const studioPreferencesKey = 'studio_preferences'
 const modelCredentialsKey = 'model_credentials'
 
 export type StudioPreferences = {
   textModel: TextModel
+  textThinkingEnabled: boolean
   imageModel: SeedreamModel
   imageSize: SeedreamSize
   imagePromptMode: ImagePromptMode
@@ -16,6 +17,7 @@ export type StudioPreferences = {
 
 export const defaultStudioPreferences: StudioPreferences = {
   textModel: textModels.pro,
+  textThinkingEnabled: false,
   imageModel: seedreamModels.pro,
   imageSize: '2K',
   imagePromptMode: imagePromptModes.short,
@@ -33,11 +35,12 @@ export async function getStudioPreferences(): Promise<StudioPreferences> {
   if (!record) return defaultStudioPreferences
   const saved = record.value as Partial<StudioPreferences>
   const textModel = normalizeTextModel(saved.textModel)
+  const textThinkingEnabled = normalizeTextThinkingEnabled(saved.textThinkingEnabled)
   const imageModel = normalizeSeedreamModel(saved.imageModel)
   const sizes = supportedSeedreamSizes(imageModel)
   const imageSize = saved.imageSize && sizes.includes(saved.imageSize) ? saved.imageSize : '2K'
   const imagePromptMode = normalizeImagePromptMode(saved.imagePromptMode)
-  return { textModel, imageModel, imageSize, imagePromptMode }
+  return { textModel, textThinkingEnabled, imageModel, imageSize, imagePromptMode }
 }
 
 export async function getModelCredentials(): Promise<ModelCredentials> {

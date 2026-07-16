@@ -147,6 +147,7 @@ Letter spacing remains `0`. Operational pages must not use marketing-scale displ
 - Settings separate text and image model categories; each provider owns one independent white configuration surface that can be repeated as new channels are added.
 - Provider panels keep their API key, model choices and relevant generation parameters together instead of using a global service-status area.
 - Text and image API keys use password inputs and only expose configured/unconfigured status after saving; stored values are never rendered back into the form.
+- Binary model behavior such as deep thinking uses a labeled switch inside the owning provider panel, with latency and token impact stated beside the control.
 
 ### Login
 

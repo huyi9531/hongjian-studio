@@ -33,6 +33,10 @@ export function normalizeTextModel(value: unknown): TextModel {
   return value === textModels.turbo ? textModels.turbo : textModels.pro
 }
 
+export function normalizeTextThinkingEnabled(value: unknown) {
+  return value === true
+}
+
 export function normalizeImagePromptMode(value: unknown): ImagePromptMode {
   return value === imagePromptModes.long ? imagePromptModes.long : imagePromptModes.short
 }

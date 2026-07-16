@@ -12,6 +12,7 @@ const pageSchema = z.object({ index: z.number().int().min(0), type: z.enum(['cov
 const workIdSchema = z.object({ workId: z.string().uuid() })
 const studioPreferencesSchema = z.object({
   textModel: z.enum([textModels.pro, textModels.turbo]),
+  textThinkingEnabled: z.boolean(),
   imageModel: z.enum([seedreamModels.standard, seedreamModels.pro]),
   imageSize: z.enum(['1K', '2K', '4K']),
   imagePromptMode: z.enum([imagePromptModes.short, imagePromptModes.long]),

@@ -29,7 +29,7 @@ pnpm start
 
 ## 模型与环境配置
 
-在设置页选择 Doubao Seed 2.1 Pro 或 Turbo 作为文本模型，并分别配置文本模型与 Seedream 图片模型的方舟 API Key。参考图片会以方舟 Chat API 支持的 Base64 `image_url` 格式发送给所选文本模型。
+在设置页选择 Doubao Seed 2.1 Pro 或 Turbo 作为文本模型，并分别配置文本模型与 Seedream 图片模型的方舟 API Key。文本模型可独立开启深度思考；关闭时发送 `thinking.type=disabled`，开启时发送 `thinking.type=enabled`。参考图片会以方舟 Chat API 支持的 Base64 `image_url` 格式发送给所选文本模型。
 
 在 `.env.local` 中配置访问控制、扫码发布和运行时路径。除数据库和数据目录外，其余变量均为服务端密钥，不应提交到版本库。
 
