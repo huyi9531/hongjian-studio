@@ -121,8 +121,8 @@ export function NewWork() {
           {previews.length > 0 && <div className="flex flex-wrap gap-3 px-3 pb-3">{previews.map((preview, index) => <div key={preview} className="relative size-20 overflow-hidden rounded-xl bg-card"><img src={preview} alt={`参考图 ${index + 1}`} className="size-full object-cover" /><button type="button" aria-label={`移除参考图 ${index + 1}`} onClick={() => removeFile(index)} className="absolute top-1 right-1 grid size-7 min-h-0 place-items-center rounded-full bg-black/65 text-white transition-colors hover:bg-black/80"><X className="size-3.5" /></button></div>)}</div>}
           <div className="flex flex-wrap items-center gap-3 border-t border-hairline px-2 pt-3">
             <label className="flex h-11 cursor-pointer items-center gap-2 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-card hover:text-foreground" title="添加参考图片"><Upload className="size-5" /><span>添加参考图片</span><input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={busy || files.length >= 5} onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /></label>
-            <span className="mr-auto text-xs text-muted-foreground">{files.length}/5 · 单张不超过 8MB</span>
-            <Button type="submit" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}生成大纲</Button>
+            <span className="w-full text-xs text-muted-foreground sm:mr-auto sm:w-auto">{files.length}/5 · 单张不超过 8MB · 将调用付费模型</span>
+            <Button className="w-full sm:w-auto" type="submit" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}生成大纲</Button>
           </div>
         </div>
         {busy && <p className="mt-4 text-sm text-muted-foreground" role="status">正在生成大纲，通常需要 15–30 秒…</p>}
@@ -135,7 +135,7 @@ export function NewWork() {
 export function Workbench({ initialWork, preferences }: { initialWork: Work; preferences: Preferences }) {
   const initialDone = initialWork.outlinePages.length > 0 && initialWork.outlinePages.every(page => initialWork.images.some(image => image.pageIndex === page.index && image.status === 'done'))
   const [work, setWork] = useState(initialWork)
-  const [stage, setStage] = useState<Stage>(initialDone || initialWork.status === 'result' ? 'result' : initialWork.status === 'generating' || initialWork.images.length ? 'generating' : 'outline')
+  const [stage, setStage] = useState<Stage>(initialDone ? 'result' : initialWork.generationJob?.status === 'running' || initialWork.status === 'generating' || initialWork.status === 'partial_failed' || initialWork.images.length ? 'generating' : 'outline')
   const [images, setImages] = useState<ImageState[]>(initialImageStates(initialWork))
   const [streamBusy, setStreamBusy] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -143,8 +143,23 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
   const [previewUrl, setPreviewUrl] = useState('')
   const saveTimer = useRef<number | null>(null)
   const firstSave = useRef(true)
+  const latestWork = useRef(initialWork)
+  const latestStage = useRef<Stage>(stage)
+  const outlineSaveQueue = useRef(Promise.resolve())
+  const outlineSaveRevision = useRef(0)
 
   const rawOutline = useMemo(() => work.outlinePages.map(page => page.content).join('\n\n<page>\n\n'), [work.outlinePages])
+
+  useEffect(() => { latestWork.current = work }, [work])
+  useEffect(() => { latestStage.current = stage }, [stage])
+
+  useEffect(() => () => {
+    if (latestStage.current !== 'outline') return
+    const current = latestWork.current
+    const outlineRaw = current.outlinePages.map(page => page.content).join('\n\n<page>\n\n')
+    const request = outlineSaveQueue.current.catch(() => undefined).then(() => updateWorkFn({ data: { workId: current.id, outlineRaw, pages: current.outlinePages } }))
+    outlineSaveQueue.current = request.then(() => undefined, () => undefined)
+  }, [])
 
   async function refreshWork() {
     const fresh = await getWorkFn({ data: { workId: work.id } })
@@ -153,18 +168,37 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
     return fresh
   }
 
-  async function saveOutline() {
+  useEffect(() => {
+    if (stage !== 'generating' || streamBusy || work.generationJob?.status !== 'running') return
+    const timer = window.setInterval(() => {
+      void refreshWork().then(fresh => {
+        if (fresh.generationJob?.status === 'succeeded') setStage('result')
+      }).catch(cause => setMessage(cause instanceof Error ? cause.message : '无法恢复生成进度'))
+    }, 2500)
+    return () => window.clearInterval(timer)
+  }, [stage, streamBusy, work.generationJob?.status])
+
+  async function saveOutlineSnapshot(snapshot: Work) {
+    const outlineRaw = snapshot.outlinePages.map(page => page.content).join('\n\n<page>\n\n')
+    const revision = ++outlineSaveRevision.current
     setSaveStatus('saving')
+    const request = outlineSaveQueue.current.catch(() => undefined).then(() => updateWorkFn({ data: { workId: snapshot.id, outlineRaw, pages: snapshot.outlinePages } }))
+    outlineSaveQueue.current = request.then(() => undefined, () => undefined)
     try {
-      const saved = await updateWorkFn({ data: { workId: work.id, outlineRaw: rawOutline, pages: work.outlinePages } })
-      setWork(saved)
-      setSaveStatus('saved')
+      const saved = await request
+      if (revision === outlineSaveRevision.current) setSaveStatus('saved')
       return saved
     } catch (cause) {
-      setSaveStatus('error')
-      setMessage(cause instanceof Error ? cause.message : '保存大纲失败')
+      if (revision === outlineSaveRevision.current) {
+        setSaveStatus('error')
+        setMessage(cause instanceof Error ? cause.message : '保存大纲失败')
+      }
       throw cause
     }
+  }
+
+  function saveOutline() {
+    return saveOutlineSnapshot(latestWork.current)
   }
 
   useEffect(() => {
@@ -172,34 +206,42 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
     if (firstSave.current) { firstSave.current = false; return }
     if (saveTimer.current) window.clearTimeout(saveTimer.current)
     setSaveStatus('idle')
-    saveTimer.current = window.setTimeout(() => { void saveOutline() }, 300)
+    saveTimer.current = window.setTimeout(() => { void saveOutline().catch(() => {}) }, 300)
     return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current) }
   }, [rawOutline, stage])
 
   function updatePage(index: number, content: string) {
-    setWork(current => ({ ...current, outlinePages: current.outlinePages.map(page => page.index === index ? { ...page, content } : page) }))
+    const current = latestWork.current
+    const next = { ...current, outlinePages: current.outlinePages.map(page => page.index === index ? { ...page, content } : page) }
+    latestWork.current = next
+    setWork(next)
   }
 
   function reindex(pages: Page[]) {
-    setWork(current => ({ ...current, outlinePages: pages.map((page, index) => ({ ...page, index })) }))
+    const next = { ...latestWork.current, outlinePages: pages.map((page, index) => ({ ...page, index })) }
+    latestWork.current = next
+    setWork(next)
   }
 
   function movePage(from: number, to: number) {
-    if (to < 0 || to >= work.outlinePages.length) return
-    const pages = [...work.outlinePages]
+    const current = latestWork.current
+    if (to < 0 || to >= current.outlinePages.length) return
+    const pages = [...current.outlinePages]
     const [moved] = pages.splice(from, 1)
     if (moved) pages.splice(to, 0, moved)
     reindex(pages)
   }
 
   function deletePage(index: number) {
-    if (work.outlinePages.length <= 1 || !window.confirm(`确定删除第 ${index + 1} 页吗？`)) return
-    reindex(work.outlinePages.filter((_, itemIndex) => itemIndex !== index))
+    const current = latestWork.current
+    if (current.outlinePages.length <= 1 || !window.confirm(`确定删除第 ${index + 1} 页吗？`)) return
+    reindex(current.outlinePages.filter((_, itemIndex) => itemIndex !== index))
   }
 
   function addPage() {
-    if (work.outlinePages.length >= 18) return
-    reindex([...work.outlinePages, { index: work.outlinePages.length, type: 'content', content: '[内容]\n请输入这一页的内容' }])
+    const current = latestWork.current
+    if (current.outlinePages.length >= 18) return
+    reindex([...current.outlinePages, { index: current.outlinePages.length, type: 'content', content: '[内容]\n请输入这一页的内容' }])
   }
 
   function applyStreamMessage(message: SseMessage) {
@@ -218,13 +260,20 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
     setMessage('')
     try {
       const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workId: work.id, model: preferences.imageModel, size: preferences.imageSize, promptMode: preferences.imagePromptMode, force }) })
+      if (response.status === 409) {
+        const body = await response.json().catch(() => null) as { error?: string } | null
+        setMessage(body?.error ?? '该作品正在后台生成图片')
+        const fresh = await refreshWork()
+        setStage(fresh.generationJob?.status === 'succeeded' ? 'result' : 'generating')
+        return
+      }
       let success = false
       await readSse(response, message => {
         applyStreamMessage(message)
         if ((message.event === 'finish' || message.event === 'retry_finish') && message.data.success === true) success = true
       })
-      await refreshWork()
-      if (success) window.setTimeout(() => setStage('result'), 700)
+      const fresh = await refreshWork()
+      if (success || fresh.generationJob?.status === 'succeeded') setStage('result')
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : '图片生成失败')
     } finally {
@@ -233,11 +282,16 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
   }
 
   async function startGeneration() {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current)
-    await saveOutline()
-    setImages(work.outlinePages.map(page => ({ index: page.index, url: '', status: 'pending' })))
-    setStage('generating')
-    await runStream('/api/generate')
+    try {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current)
+      await saveOutline()
+      setImages(latestWork.current.outlinePages.map(page => ({ index: page.index, url: '', status: 'pending' })))
+      setStage('generating')
+      await runStream('/api/generate')
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : '无法开始图片生成')
+      setStage('outline')
+    }
   }
 
   async function regenerate(index: number) {
@@ -253,10 +307,21 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
     }
   }
 
+  async function beginOutlineEdit() {
+    try {
+      const saved = await updateWorkFn({ data: { workId: work.id, status: 'outline' } })
+      setWork(saved)
+      setImages(initialImageStates(saved))
+      setStage('outline')
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : '无法进入大纲编辑')
+    }
+  }
+
   return <section className="min-h-[calc(100dvh-64px)] px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
     {stage === 'outline' && <OutlineStage work={work} saveStatus={saveStatus} onUpdate={updatePage} onMove={movePage} onDelete={deletePage} onAdd={addPage} onStart={() => void startGeneration()} />}
     {stage === 'generating' && <GenerationStage work={work} images={images} busy={streamBusy} message={message} onBack={() => setStage('outline')} onRetryAll={() => void runStream('/api/retry-failed')} onRegenerate={index => void regenerate(index)} />}
-    {stage === 'result' && <ResultStage work={work} setWork={setWork} images={images} busy={streamBusy} message={message} onPreview={setPreviewUrl} onRegenerate={index => void regenerate(index)} />}
+    {stage === 'result' && <ResultStage work={work} setWork={setWork} images={images} busy={streamBusy} message={message} onPreview={setPreviewUrl} onRegenerate={index => void regenerate(index)} onEditOutline={() => void beginOutlineEdit()} />}
     {previewUrl && <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="图片预览" onClick={() => setPreviewUrl('')}><button className="absolute top-4 right-4 grid size-11 place-items-center rounded-md text-white hover:bg-white/15" aria-label="关闭预览"><X /></button><img src={previewUrl} alt="大图预览" className="max-h-[90dvh] max-w-full object-contain" /></div>}
   </section>
 }
@@ -277,7 +342,8 @@ function GenerationStage({ work, images, busy, message, onBack, onRetryAll, onRe
   const done = images.filter(image => image.status === 'done').length
   const failed = images.filter(image => image.status === 'error').length
   const percent = images.length ? Math.round(done / images.length * 100) : 0
-  const description = busy ? `正在生成，已完成 ${done} / ${images.length} 页` : failed ? `${failed} 张图片生成失败，可点击重试` : `全部 ${images.length} 张图片生成完成`
+  const backgroundRunning = work.generationJob?.status === 'running'
+  const description = busy || backgroundRunning ? `正在生成，已完成 ${done} / ${images.length} 页，可离开页面后回来查看` : failed ? `${failed} 张图片生成失败，可点击重试` : `全部 ${images.length} 张图片生成完成`
   return <div className="mx-auto max-w-[1280px]"><WorkspacePageHeader className="mb-7" title="生成图片" description={description} actions={<>{failed > 0 && !busy && <Button onClick={onRetryAll}><RefreshCw />一键补全失败图片</Button>}<Button variant="outline" onClick={onBack} disabled={busy}><ArrowLeft />返回大纲</Button></>} />
     <section className="rounded-2xl bg-card p-5 sm:p-6"><div className="flex justify-between text-sm"><span>生成进度</span><span className="font-medium text-ring">{percent}%</span></div><div className="mt-3 h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-ring transition-[width] duration-300" style={{ width: `${percent}%` }} /></div>{message && <p className="mt-4 text-sm text-destructive" role="alert">{message}</p>}<ImageGrid images={images} onRegenerate={onRegenerate} disabled={busy} /></section>
   </div>
@@ -288,7 +354,8 @@ function ImageGrid({ images, onRegenerate, onEdit, onPreview, disabled }: { imag
   return <div className="mt-7 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 xl:grid-cols-5">{images.map(image => <article key={image.index} className="min-w-0"><div className="group relative aspect-[3/4] overflow-hidden rounded-xl bg-muted">{image.status === 'done' && image.url ? <><button type="button" className="size-full" onClick={() => onPreview?.(image.url)} aria-label={`预览第 ${image.index + 1} 页`}><img src={image.url} alt={`第 ${image.index + 1} 页`} className="size-full object-cover" /></button>{onEdit ? <div className="absolute inset-x-0 bottom-0 grid grid-cols-2 border-t border-white/15 bg-black/70 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"><button type="button" className="flex h-12 items-center justify-center gap-2 text-sm font-medium transition-colors hover:bg-white/10 active:bg-white/15 disabled:pointer-events-none disabled:text-white/35" disabled={disabled} onClick={() => onEdit(image.index)}><PencilLine className="size-4" />修改大纲</button><button type="button" className="flex h-12 items-center justify-center gap-2 border-l border-white/20 text-sm font-medium transition-colors hover:bg-white/10 active:bg-white/15 disabled:pointer-events-none disabled:text-white/35" disabled={disabled} onClick={() => onRegenerate(image.index)}><RefreshCw className="size-4" />重新生成</button></div> : <div className="absolute inset-x-0 bottom-0 flex justify-center bg-black/50 p-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"><Button size="sm" variant="outline" className={overlayButtonClass} disabled={disabled} onClick={() => onRegenerate(image.index)}><RefreshCw />重新生成</Button></div>}</> : image.status === 'error' ? <div className="flex size-full flex-col items-center justify-center gap-3 p-4 text-center"><span className="grid size-10 place-items-center rounded-full bg-destructive text-lg font-semibold text-white">!</span><span className="text-sm font-medium">生成失败</span><span className="line-clamp-3 text-xs leading-5 text-destructive">{image.error}</span><Button size="sm" onClick={() => onRegenerate(image.index)} disabled={disabled}>点击重试</Button></div> : <div className="flex size-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">{image.status === 'generating' || image.status === 'retrying' ? <><LoaderCircle className="animate-spin text-ring" />{image.status === 'retrying' ? '重试中…' : '生成中…'}</> : '等待中'}</div>}</div><div className="mt-3 flex items-center justify-between px-1 text-xs"><span className="text-foreground">第 {image.index + 1} 页</span><span className={image.status === 'done' ? 'text-muted-foreground' : image.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>{image.status === 'done' ? '已完成' : image.status === 'error' ? '失败' : image.status === 'retrying' ? '重试中' : image.status === 'generating' ? '生成中' : '等待中'}</span></div></article>)}</div>
 }
 
-function ResultStage({ work, setWork, images, busy, message, onPreview, onRegenerate }: { work: Work; setWork: (work: Work) => void; images: ImageState[]; busy: boolean; message: string; onPreview: (url: string) => void; onRegenerate: (index: number) => void }) {
+function ResultStage({ work, setWork, images, busy, message, onPreview, onRegenerate, onEditOutline }: { work: Work; setWork: (work: Work) => void; images: ImageState[]; busy: boolean; message: string; onPreview: (url: string) => void; onRegenerate: (index: number) => void; onEditOutline: () => void }) {
+  const imagesReadyForPublish = images.length === work.outlinePages.length && work.images.length === work.outlinePages.length && work.images.every(image => image.status === 'done' && Boolean(image.inputFingerprint) && Boolean(image.sourceUrl))
   const publishSignature = publicationInputSignature({ title: work.selectedTitle || work.topic, copywriting: work.copywriting, tags: work.tags, images: images.map(image => ({ index: image.index, url: image.url })) })
   const publicationIsCurrent = work.publication ? publicationMatchesLatestWork(work.publication.createdAt, work.updatedAt, work.images.map(image => image.updatedAt)) : false
   const [contentStatus, setContentStatus] = useState<'idle' | 'generating' | 'done' | 'error'>(work.copywriting ? 'done' : 'idle')
@@ -352,9 +419,9 @@ function ResultStage({ work, setWork, images, busy, message, onPreview, onRegene
     finally { setPublishBusy(false) }
   }
 
-  return <div className="mx-auto max-w-[1280px]"><WorkspacePageHeader className="mb-7" title="生成结果" description={`全部 ${images.length} 张图片生成完成`} actions={<Link to="/studio"><Button variant="outline"><Plus />再来一篇</Button></Link>} />
+  return <div className="mx-auto max-w-[1280px]"><WorkspacePageHeader className="mb-7" title="生成结果" description={`全部 ${images.length} 张图片生成完成`} actions={<><Button variant="outline" onClick={onEditOutline}><PencilLine />编辑大纲</Button><Link to="/studio"><Button variant="outline"><Plus />再来一篇</Button></Link></>} />
     {message && <p className="mb-4 text-sm text-destructive">{message}</p>}<ImageGrid images={images} onRegenerate={onRegenerate} onEdit={editOutline} onPreview={onPreview} disabled={busy} />
-    <section className="mt-12"><h2 className="text-lg font-semibold">标题、文案和标签</h2>{contentStatus === 'idle' && <div className="mt-4 rounded-2xl bg-card p-10 text-center"><Button onClick={() => void generateContent()}><Sparkles />生成标题、文案和标签</Button></div>}{contentStatus === 'generating' && <div className="mt-4 flex items-center justify-center gap-3 rounded-2xl bg-card p-10 text-sm text-muted-foreground"><LoaderCircle className="animate-spin text-ring" />正在生成标题、文案和标签…</div>}{contentStatus === 'error' && <div className="mt-4 rounded-2xl bg-card p-8 text-center"><p className="text-sm text-destructive">{contentError}</p><Button className="mt-4" variant="outline" onClick={() => void generateContent()}><RefreshCw />重新生成</Button></div>}{contentStatus === 'done' && <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]"><div className="grid gap-4"><div className="rounded-2xl bg-card p-5"><h3 className="text-sm font-medium">标题</h3><div className="mt-3 grid gap-2 rounded-xl bg-muted p-2">{work.titles.map((title, index) => <button type="button" key={`${title}-${index}`} onClick={() => void saveContent({ ...work, selectedTitle: title })} className={`min-h-11 rounded-lg px-4 text-left text-sm transition-[background-color,color] ${work.selectedTitle === title ? 'bg-card text-foreground' : 'text-muted-foreground hover:bg-card/75 hover:text-foreground'}`}><span className="mr-2 text-xs text-muted-foreground">{index === 0 ? '推荐' : `备选 ${index}`}</span>{title}</button>)}</div><Input className="mt-3" value={work.selectedTitle} onChange={event => setWork({ ...work, selectedTitle: event.target.value })} onBlur={() => void saveContent(work)} aria-label="发布标题" /></div><div className="rounded-2xl bg-card p-5"><h3 className="text-sm font-medium">正文</h3><Textarea className="mt-3 min-h-56 bg-muted leading-7" value={work.copywriting} onChange={event => setWork({ ...work, copywriting: event.target.value })} onBlur={() => void saveContent(work)} /></div><div className="rounded-2xl bg-card p-5"><h3 className="text-sm font-medium">标签</h3><Input className="mt-3 bg-muted" value={work.tags.join(' ')} onChange={event => setWork({ ...work, tags: event.target.value.split(/\s+/).map(tag => tag.replace(/^#/, '')).filter(Boolean) })} onBlur={() => void saveContent(work)} /></div><Button variant="outline" onClick={() => void generateContent()}><RefreshCw />重新生成文案</Button></div><aside className="h-fit rounded-2xl bg-card p-6 lg:sticky lg:top-24"><h3 className="text-base font-medium">扫码发布</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">确认内容后生成发布二维码。</p><Button className="mt-5 w-full" onClick={() => void publish()} disabled={publishBusy || !work.selectedTitle || !work.copywriting || images.some(image => image.status !== 'done') || publishedSignature === publishSignature}>{publishBusy ? <LoaderCircle className="animate-spin" /> : <Send />}生成二维码</Button>{qrIsCurrent && publishMessage && <p className="mt-3 text-sm text-muted-foreground" role="status">{publishMessage}</p>}{qrIsCurrent && work.publication && <div className="mt-6 grid justify-items-center gap-3"><div className="rounded-xl border border-hairline bg-card p-4"><QRCodeSVG value={work.publication.h5Url} size={176} /></div><a className="inline-flex h-11 items-center gap-2 text-sm font-medium text-primary hover:underline" href={work.publication.h5Url} target="_blank" rel="noreferrer"><PencilLine className="size-4" />打开发布页</a></div>}</aside></div>}</section>
+  <section className="mt-12"><h2 className="text-lg font-semibold">标题、文案和标签</h2>{contentStatus === 'idle' && <div className="mt-4 rounded-2xl bg-card p-10 text-center"><Button onClick={() => void generateContent()}><Sparkles />生成标题、文案和标签</Button></div>}{contentStatus === 'generating' && <div className="mt-4 flex items-center justify-center gap-3 rounded-2xl bg-card p-10 text-sm text-muted-foreground"><LoaderCircle className="animate-spin text-ring" />正在生成标题、文案和标签…</div>}{contentStatus === 'error' && <div className="mt-4 rounded-2xl bg-card p-8 text-center"><p className="text-sm text-destructive">{contentError}</p><Button className="mt-4" variant="outline" onClick={() => void generateContent()}><RefreshCw />重新生成</Button></div>}{contentStatus === 'done' && <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]"><div className="grid gap-4"><div className="rounded-2xl bg-card p-5"><h3 className="text-sm font-medium">标题</h3><div className="mt-3 grid gap-2 rounded-xl bg-muted p-2">{work.titles.map((title, index) => <button type="button" key={`${title}-${index}`} onClick={() => void saveContent({ ...work, selectedTitle: title })} className={`min-h-11 rounded-lg px-4 text-left text-sm transition-[background-color,color] ${work.selectedTitle === title ? 'bg-card text-foreground' : 'text-muted-foreground hover:bg-card/75 hover:text-foreground'}`}><span className="mr-2 text-xs text-muted-foreground">{index === 0 ? '推荐' : `备选 ${index}`}</span>{title}</button>)}</div><Input className="mt-3" value={work.selectedTitle} onChange={event => setWork({ ...work, selectedTitle: event.target.value })} onBlur={() => void saveContent(work)} aria-label="发布标题" /></div><div className="rounded-2xl bg-card p-5"><h3 className="text-sm font-medium">正文</h3><Textarea className="mt-3 min-h-56 bg-muted leading-7" value={work.copywriting} onChange={event => setWork({ ...work, copywriting: event.target.value })} onBlur={() => void saveContent(work)} /></div><div className="rounded-2xl bg-card p-5"><h3 className="text-sm font-medium">标签</h3><Input className="mt-3 bg-muted" value={work.tags.join(' ')} onChange={event => setWork({ ...work, tags: event.target.value.split(/\s+/).map(tag => tag.replace(/^#/, '')).filter(Boolean) })} onBlur={() => void saveContent(work)} /></div><Button variant="outline" onClick={() => void generateContent()}><RefreshCw />重新生成文案</Button></div><aside className="h-fit rounded-2xl bg-card p-6 lg:sticky lg:top-24"><h3 className="text-base font-medium">扫码发布</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">确认内容后生成发布二维码。</p><p className="mt-3 text-xs leading-5 text-muted-foreground">请确认图片不含第三方平台标识、账号、水印或未获授权素材。</p>{!imagesReadyForPublish && <p className="mt-3 text-sm text-destructive" role="alert">图片尚未完成、已失效或属于历史未校验结果。当前仅保留本地归档，请重新生成图片后再发布。</p>}<Button className="mt-5 w-full" onClick={() => void publish()} disabled={publishBusy || !work.selectedTitle || !work.copywriting || !imagesReadyForPublish || publishedSignature === publishSignature}>{publishBusy ? <LoaderCircle className="animate-spin" /> : <Send />}生成二维码</Button>{qrIsCurrent && publishMessage && <p className="mt-3 text-sm text-muted-foreground" role="status">{publishMessage}</p>}{qrIsCurrent && work.publication && <div className="mt-6 grid justify-items-center gap-3"><div className="rounded-xl border border-hairline bg-card p-4"><QRCodeSVG value={work.publication.h5Url} size={176} /></div><a className="inline-flex h-11 items-center gap-2 text-sm font-medium text-primary hover:underline" href={work.publication.h5Url} target="_blank" rel="noreferrer"><PencilLine className="size-4" />打开发布页</a></div>}</aside></div>}</section>
     <Dialog open={editingPageIndex !== null} onOpenChange={open => { if (!open && !outlineBusy) setEditingPageIndex(null) }}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>修改第 {editingPageIndex === null ? '' : editingPageIndex + 1} 页大纲</DialogTitle><DialogDescription>保存后，后续重新生成会使用这里的最新内容。</DialogDescription></DialogHeader><Textarea value={editingContent} onChange={event => setEditingContent(event.target.value)} className="min-h-64 resize-y bg-muted leading-7" disabled={outlineBusy} autoFocus />{outlineError && <p className="text-sm text-destructive" role="alert">{outlineError}</p>}<DialogFooter><Button variant="outline" onClick={() => void saveEditedOutline(false)} disabled={outlineBusy || !editingContent.trim()}>{outlineBusy ? <LoaderCircle className="animate-spin" /> : null}保存</Button><Button onClick={() => void saveEditedOutline(true)} disabled={outlineBusy || !editingContent.trim()}>{outlineBusy ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}保存并重新生成</Button></DialogFooter></DialogContent></Dialog>
   </div>
 }

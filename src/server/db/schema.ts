@@ -22,9 +22,25 @@ export const workImages = sqliteTable('work_images', {
   archivePath: text('archive_path'),
   status: text('status').notNull().default('pending'),
   error: text('error'),
+  inputFingerprint: text('input_fingerprint'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 }, table => [uniqueIndex('work_images_work_page').on(table.workId, table.pageIndex)])
+
+export const generationJobs = sqliteTable('generation_jobs', {
+  id: text('id').primaryKey(),
+  workId: text('work_id').notNull().references(() => works.id, { onDelete: 'cascade' }).unique(),
+  inputFingerprint: text('input_fingerprint').notNull(),
+  model: text('model').notNull(),
+  size: text('size').notNull(),
+  promptMode: text('prompt_mode').notNull(),
+  status: text('status').notNull(),
+  completedPages: integer('completed_pages').notNull().default(0),
+  failedPages: integer('failed_pages').notNull().default(0),
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+})
 
 export const workReferences = sqliteTable('work_references', {
   id: text('id').primaryKey(),

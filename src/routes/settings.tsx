@@ -91,6 +91,7 @@ function SettingsPage() {
   return <AppShell><section className="mx-auto max-w-5xl px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
     <WorkspacePageHeader title="设置" description="按用途管理模型渠道和默认生成参数。" actions={<Button onClick={save} disabled={pending}>{pending ? <LoaderCircle className="animate-spin" /> : <Save />}保存设置</Button>} />
     {message && <p className={cn('mt-5 text-sm', saveFailed ? 'text-destructive' : 'text-muted-foreground')} role={saveFailed ? 'alert' : 'status'}>{message}</p>}
+    <p className="mt-5 max-w-[72ch] text-xs leading-5 text-muted-foreground">API Key 仅保存在本机服务端 SQLite。请勿将数据目录放入共享盘、同步盘或提交到版本库。</p>
 
     <div className="mt-8 grid gap-10">
       <div>

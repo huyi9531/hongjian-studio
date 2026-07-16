@@ -12,7 +12,7 @@ export const Route = createFileRoute('/works')({
   component: Works,
 })
 
-const statusLabels: Record<string, string> = { draft: '草稿', outline: '大纲', generating: '生成中', result: '已完成' }
+const statusLabels: Record<string, string> = { draft: '草稿', outline: '大纲', generating: '后台生成中', partial_failed: '生成部分失败', result: '已完成', publishable: '可发布', unpublishable: '不可发布', published: '已发布' }
 
 function Works() {
   const works = Route.useLoaderData()

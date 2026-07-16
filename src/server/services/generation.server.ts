@@ -1,11 +1,38 @@
 import '@tanstack/react-start/server-only'
+import { createHash, randomUUID } from 'node:crypto'
+import { eq, ne } from 'drizzle-orm'
 import { imagePromptModes, type ImagePromptMode, type SeedreamModel, type SeedreamSize } from '@/lib/studio-preferences'
+import { db } from '../db/index.server'
+import { generationJobs } from '../db/schema'
 import { generateSeedreamImage } from './ai.server'
 import { getReferenceDataUrls, getWork, updateWork, upsertImage, type OutlinePage } from './work.server'
 
 export type GenerationEvent = {
   event: 'progress' | 'complete' | 'error' | 'finish' | 'retry_start' | 'retry_finish'
   data: Record<string, unknown>
+}
+
+type PreparedGeneration = {
+  work: Awaited<ReturnType<typeof getWork>>
+  references: string[]
+  referenceFingerprint: string
+  taskFingerprint: string
+  pageFingerprints: Map<number, string>
+  model: SeedreamModel
+  size: SeedreamSize
+  promptMode: ImagePromptMode
+}
+
+type ClaimedGeneration = PreparedGeneration & { job: typeof generationJobs.$inferSelect }
+
+export class GenerationInProgressError extends Error {
+  constructor(public readonly job: typeof generationJobs.$inferSelect) {
+    super('该作品正在后台生成图片')
+  }
+}
+
+function hash(value: unknown) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
 export function buildImagePrompt(page: OutlinePage, topic: string, outline: string, mode: ImagePromptMode) {
@@ -36,127 +63,172 @@ ${topic}
 ${outline}`
 }
 
-async function generatePage(workId: string, page: OutlinePage, model: SeedreamModel, size: SeedreamSize, references: string[], promptMode: ImagePromptMode) {
-  await upsertImage(workId, page.index, { status: 'generating', error: null })
+async function claimGenerationJob(prepared: PreparedGeneration) {
+  const now = new Date()
+  const inserted = await db.insert(generationJobs).values({
+    id: randomUUID(),
+    workId: prepared.work.id,
+    inputFingerprint: prepared.taskFingerprint,
+    model: prepared.model,
+    size: prepared.size,
+    promptMode: prepared.promptMode,
+    status: 'running',
+    completedPages: 0,
+    failedPages: 0,
+    error: null,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: generationJobs.workId,
+    set: {
+      inputFingerprint: prepared.taskFingerprint,
+      model: prepared.model,
+      size: prepared.size,
+      promptMode: prepared.promptMode,
+      status: 'running',
+      completedPages: 0,
+      failedPages: 0,
+      error: null,
+      updatedAt: now,
+    },
+    where: ne(generationJobs.status, 'running'),
+  }).returning()
+
+  if (inserted[0]) return inserted[0]
+  const [job] = await db.select().from(generationJobs).where(eq(generationJobs.workId, prepared.work.id)).limit(1)
+  if (!job) throw new Error('无法创建图片生成任务')
+  throw new GenerationInProgressError(job)
+}
+
+async function updateJob(workId: string, status: 'running' | 'succeeded' | 'partial_failed' | 'interrupted', completedPages: number, failedPages: number, error: string | null = null) {
+  await db.update(generationJobs).set({ status, completedPages, failedPages, error, updatedAt: new Date() }).where(eq(generationJobs.workId, workId))
+}
+
+export async function prepareGeneration(workId: string, model: SeedreamModel, size: SeedreamSize, promptMode: ImagePromptMode = imagePromptModes.short) {
+  const [work, references] = await Promise.all([getWork(workId), getReferenceDataUrls(workId)])
+  const referenceFingerprint = hash(references)
+  const pageFingerprints = new Map(work.outlinePages.map(page => [page.index, hash({ page, referenceFingerprint, model, size, promptMode, outline: promptMode === imagePromptModes.long ? work.outlineRaw : undefined })]))
+  const prepared: PreparedGeneration = {
+    work,
+    references,
+    referenceFingerprint,
+    taskFingerprint: hash({ pages: work.outlinePages, referenceFingerprint, model, size, promptMode }),
+    pageFingerprints,
+    model,
+    size,
+    promptMode,
+  }
+  const job = await claimGenerationJob(prepared)
+  return { ...prepared, job }
+}
+
+async function generatePage(prepared: PreparedGeneration, page: OutlinePage, references: string[]) {
+  const inputFingerprint = prepared.pageFingerprints.get(page.index)
+  if (!inputFingerprint) throw new Error('页面生成指纹缺失')
+  await upsertImage(prepared.work.id, page.index, { status: 'generating', error: null, inputFingerprint })
   try {
-    const work = await getWork(workId)
-    const generated = await generateSeedreamImage(buildImagePrompt(page, work.topic, work.outlineRaw, promptMode), model, size, workId, page.index, references)
-    await upsertImage(workId, page.index, { status: 'done', error: null, ...generated })
-    const refreshed = await getWork(workId)
-    const image = refreshed.images.find(item => item.pageIndex === page.index)
-    return { ok: true as const, image }
+    const generated = await generateSeedreamImage(buildImagePrompt(page, prepared.work.topic, prepared.work.outlineRaw, prepared.promptMode), prepared.model, prepared.size, prepared.work.id, page.index, references)
+    await upsertImage(prepared.work.id, page.index, { status: 'done', error: null, inputFingerprint, ...generated })
+    const fresh = await getWork(prepared.work.id)
+    return { ok: true as const, image: fresh.images.find(image => image.pageIndex === page.index) }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
-    await upsertImage(workId, page.index, { status: 'error', error: message })
+    await upsertImage(prepared.work.id, page.index, { status: 'error', error: message, inputFingerprint })
     return { ok: false as const, message }
   }
 }
 
 async function runConcurrent<T>(items: T[], limit: number, task: (item: T) => Promise<void>) {
   let cursor = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (cursor < items.length) {
       const item = items[cursor]
       cursor += 1
       if (item !== undefined) await task(item)
     }
-  })
-  await Promise.all(workers)
+  }))
 }
 
 function doneEvent(index: number, imageId?: string, phase = 'content', cached = false): GenerationEvent {
   return { event: 'complete', data: { index, status: 'done', image_url: imageId ? `/api/work-images/${imageId}` : undefined, phase, cached } }
 }
 
-function errorEvent(index: number, message: string, phase = 'content', cached = false): GenerationEvent {
-  return { event: 'error', data: { index, status: 'error', message, retryable: true, phase, cached } }
+function errorEvent(index: number, message: string, phase = 'content'): GenerationEvent {
+  return { event: 'error', data: { index, status: 'error', message, retryable: true, phase } }
 }
 
-export async function generateWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, force = false, promptMode: ImagePromptMode = imagePromptModes.short) {
-  const work = await getWork(workId)
-  const completedImages = work.images.filter(image => image.status === 'done')
-  if (!force && completedImages.length) {
-    for (const page of work.outlinePages) {
-      const image = work.images.find(item => item.pageIndex === page.index)
-      emit(image?.status === 'done' ? doneEvent(page.index, image.id, 'cached', true) : errorEvent(page.index, image?.error || '历史记录中缺少该页图片，可手动补全', 'cached', true))
-    }
-    const failed = work.outlinePages.length - completedImages.length
-    emit({ event: 'finish', data: { success: failed === 0, task_id: workId, total: work.outlinePages.length, completed: completedImages.length, failed, failed_indices: work.outlinePages.filter(page => !completedImages.some(image => image.pageIndex === page.index)).map(page => page.index), cached: true } })
-    return
+export async function runPreparedGeneration(prepared: ClaimedGeneration, emit: (event: GenerationEvent) => void, options: { retryOnly?: boolean; forcePageIndexes?: number[] } = {}) {
+  const currentImages = new Map(prepared.work.images.map(image => [image.pageIndex, image]))
+  const shouldGenerate = (page: OutlinePage) => {
+    if (options.forcePageIndexes?.includes(page.index)) return true
+    const image = currentImages.get(page.index)
+    const current = image?.status === 'done' && image.inputFingerprint === prepared.pageFingerprints.get(page.index)
+    return options.retryOnly ? !current : !current
   }
+  const pendingPages = prepared.work.outlinePages.filter(shouldGenerate)
+  const completedCached = prepared.work.outlinePages.filter(page => !shouldGenerate(page))
+  let completed = completedCached.length
+  let failed = 0
+  const failedIndexes: number[] = []
 
-  await updateWork(workId, { status: 'generating' })
-  for (const page of work.outlinePages) await upsertImage(workId, page.index, { status: 'pending', error: null, ...(force ? { sourceUrl: null, archivePath: null } : {}) })
-  const userReferences = await getReferenceDataUrls(workId)
-  const cover = work.outlinePages.find(page => page.type === 'cover') ?? work.outlinePages[0]
-  const otherPages = work.outlinePages.filter(page => page.index !== cover?.index)
-  let coverReference: string | undefined
-  let completed = 0
-  const failedIndices: number[] = []
+  await updateWork(prepared.work.id, { status: 'generating' })
+  for (const page of completedCached) emit(doneEvent(page.index, currentImages.get(page.index)?.id, 'cached', true))
+  for (const page of pendingPages) await upsertImage(prepared.work.id, page.index, { status: 'pending', error: null, inputFingerprint: prepared.pageFingerprints.get(page.index) })
 
-  if (cover) {
-    emit({ event: 'progress', data: { index: cover.index, status: 'generating', message: '正在生成封面...', current: 1, total: work.outlinePages.length, phase: 'cover' } })
-    const result = await generatePage(workId, cover, model, size, userReferences, promptMode)
+  const cover = prepared.work.outlinePages.find(page => page.type === 'cover') ?? prepared.work.outlinePages[0]
+  let coverReference = currentImages.get(cover?.index ?? -1)?.sourceUrl ?? undefined
+  if (cover && pendingPages.some(page => page.index === cover.index)) {
+    emit({ event: 'progress', data: { index: cover.index, status: 'generating', message: '正在生成封面...', current: completed + 1, total: prepared.work.outlinePages.length, phase: 'cover' } })
+    const result = await generatePage(prepared, cover, prepared.references)
     if (result.ok) {
       completed += 1
       coverReference = result.image?.sourceUrl ?? undefined
       emit(doneEvent(cover.index, result.image?.id, 'cover'))
     } else {
-      failedIndices.push(cover.index)
+      failed += 1
+      failedIndexes.push(cover.index)
       emit(errorEvent(cover.index, result.message, 'cover'))
     }
   }
 
+  const otherPages = pendingPages.filter(page => page.index !== cover?.index)
   if (otherPages.length) {
-    emit({ event: 'progress', data: { status: 'batch_start', message: `开始并发生成 ${otherPages.length} 页内容...`, current: completed, total: work.outlinePages.length, phase: 'content' } })
-    for (const page of otherPages) emit({ event: 'progress', data: { index: page.index, status: 'generating', current: completed + 1, total: work.outlinePages.length, phase: 'content' } })
+    emit({ event: 'progress', data: { status: 'batch_start', message: `开始并发生成 ${otherPages.length} 页内容...`, current: completed, total: prepared.work.outlinePages.length, phase: 'content' } })
     await runConcurrent(otherPages, 3, async page => {
-      const result = await generatePage(workId, page, model, size, [...userReferences, ...(coverReference ? [coverReference] : [])], promptMode)
+      emit({ event: 'progress', data: { index: page.index, status: 'generating', current: completed + 1, total: prepared.work.outlinePages.length, phase: 'content' } })
+      const result = await generatePage(prepared, page, [...prepared.references, ...(coverReference ? [coverReference] : [])])
       if (result.ok) {
         completed += 1
         emit(doneEvent(page.index, result.image?.id))
       } else {
-        failedIndices.push(page.index)
+        failed += 1
+        failedIndexes.push(page.index)
         emit(errorEvent(page.index, result.message))
       }
     })
   }
 
-  if (!failedIndices.length) await updateWork(workId, { status: 'result' })
-  emit({ event: 'finish', data: { success: failedIndices.length === 0, task_id: workId, total: work.outlinePages.length, completed, failed: failedIndices.length, failed_indices: failedIndices } })
+  const success = failed === 0
+  await updateWork(prepared.work.id, { status: success ? 'result' : 'partial_failed' })
+  await updateJob(prepared.work.id, success ? 'succeeded' : 'partial_failed', completed, failed)
+  emit({ event: options.retryOnly ? 'retry_finish' : 'finish', data: { success, task_id: prepared.job.id, total: prepared.work.outlinePages.length, completed, failed, failed_indices: failedIndexes } })
+}
+
+export async function generateWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, _force = false, promptMode: ImagePromptMode = imagePromptModes.short) {
+  const prepared = await prepareGeneration(workId, model, size, promptMode)
+  await runPreparedGeneration(prepared, emit)
 }
 
 export async function retryFailedWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, promptMode: ImagePromptMode = imagePromptModes.short) {
-  const work = await getWork(workId)
-  const pages = work.outlinePages.filter(page => work.images.find(image => image.pageIndex === page.index)?.status !== 'done')
-  emit({ event: 'retry_start', data: { total: pages.length, message: `开始重试 ${pages.length} 张失败的图片` } })
-  const references = await getReferenceDataUrls(workId)
-  const coverPage = work.outlinePages.find(page => page.type === 'cover') ?? work.outlinePages[0]
-  const coverImage = work.images.find(image => image.pageIndex === coverPage?.index && image.status === 'done')?.sourceUrl
-  let completed = 0
-  let failed = 0
-  await runConcurrent(pages, 3, async page => {
-    const result = await generatePage(workId, page, model, size, [...references, ...(coverImage && page.index !== coverPage?.index ? [coverImage] : [])], promptMode)
-    if (result.ok) {
-      completed += 1
-      emit(doneEvent(page.index, result.image?.id))
-    } else {
-      failed += 1
-      emit(errorEvent(page.index, result.message))
-    }
-  })
-  if (!failed) await updateWork(workId, { status: 'result' })
-  emit({ event: 'retry_finish', data: { success: failed === 0, total: pages.length, completed, failed } })
+  const prepared = await prepareGeneration(workId, model, size, promptMode)
+  emit({ event: 'retry_start', data: { total: prepared.work.outlinePages.length, message: '开始补全未完成或已失效的图片' } })
+  await runPreparedGeneration(prepared, emit, { retryOnly: true })
 }
 
 export async function regenerateWorkImage(workId: string, pageIndex: number, model: SeedreamModel, size: SeedreamSize, promptMode: ImagePromptMode = imagePromptModes.short) {
-  const work = await getWork(workId)
-  const page = work.outlinePages.find(item => item.index === pageIndex)
+  const prepared = await prepareGeneration(workId, model, size, promptMode)
+  const page = prepared.work.outlinePages.find(item => item.index === pageIndex)
   if (!page) throw new Error('大纲中不存在该页面')
-  const references = await getReferenceDataUrls(workId)
-  const coverPage = work.outlinePages.find(item => item.type === 'cover') ?? work.outlinePages[0]
-  const coverImage = work.images.find(image => image.pageIndex === coverPage?.index && image.status === 'done')?.sourceUrl
-  const result = await generatePage(workId, page, model, size, [...references, ...(coverImage && page.index !== coverPage?.index ? [coverImage] : [])], promptMode)
-  if (!result.ok) throw new Error(result.message)
+  await runPreparedGeneration(prepared, () => {}, { forcePageIndexes: [pageIndex] })
   return getWork(workId)
 }

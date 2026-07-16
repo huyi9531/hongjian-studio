@@ -18,7 +18,8 @@ vi.mock('../env.server', () => ({
 }))
 
 vi.mock('./work.server', () => ({
-  getWork: vi.fn(async () => ({ images: [{ sourceUrl: 'https://images.example.test/cover.png' }] })),
+  getWork: vi.fn(async () => ({ outlinePages: [{ index: 0, type: 'cover', content: '封面' }], images: [{ sourceUrl: 'https://images.example.test/cover.png', status: 'done', inputFingerprint: 'current' }] })),
+  updateWork: vi.fn(async () => undefined),
 }))
 
 import { publicationFingerprint, publishWork } from './publish.server'
@@ -38,7 +39,7 @@ describe('publishWork', () => {
 
   it('always disables transfer in the provider payload and stored receipt', async () => {
     const receipt = await publishWork('work-id', '标题', '正文')
-    const request = state.fetch.mock.calls[0]?.[1] as RequestInit
+    const request = state.fetch.mock.calls.find(call => call[1]?.method === 'POST')?.[1] as RequestInit
     expect(JSON.parse(String(request.body))).toMatchObject({ type: 'normal', transfer_to_oss: false })
     expect(receipt.transferToOss).toBe(false)
     expect(state.inserted[0]).toMatchObject({ transferToOss: false })
@@ -48,12 +49,18 @@ describe('publishWork', () => {
     state.existing = [{ id: 'legacy-publication', fingerprint: publicationFingerprint('标题', '正文', ['https://images.example.test/cover.png'], true) }]
     const receipt = await publishWork('work-id', '标题', '正文')
     expect(receipt).toMatchObject({ id: 'legacy-publication', cached: true })
-    expect(state.fetch).not.toHaveBeenCalled()
+    expect(state.fetch.mock.calls.some(call => call[1]?.method === 'POST')).toBe(false)
   })
 
   it('uses a canonical fingerprint independent of the hidden transfer policy', () => {
     const images = ['https://images.example.test/cover.png']
     expect(publicationFingerprint('标题', '正文', images)).not.toBe(publicationFingerprint('标题', '正文', images, false))
     expect(publicationFingerprint('标题', '正文', images, false)).not.toBe(publicationFingerprint('标题', '正文', images, true))
+  })
+
+  it('does not call the paid endpoint when an image public URL has expired', async () => {
+    state.fetch.mockResolvedValueOnce(new Response('', { status: 404 }))
+    await expect(publishWork('work-id', '标题', '正文')).rejects.toThrow('公网链接已失效')
+    expect(state.fetch.mock.calls.some(call => call[1]?.method === 'POST')).toBe(false)
   })
 })

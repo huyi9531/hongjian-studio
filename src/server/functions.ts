@@ -52,7 +52,7 @@ export const createWorkFn = createServerFn({ method: 'POST' }).validator(z.objec
   const id = await createWork(data.topic, outline.pages, outline.raw, references)
   return getWork(id)
 })
-export const updateWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ topic: z.string().trim().min(2).max(300).optional(), outlineRaw: z.string().max(30000).optional(), pages: z.array(pageSchema).min(1).max(18).optional(), selectedTitle: z.string().max(80).optional(), copywriting: z.string().max(1000).optional(), tags: z.array(z.string().trim().min(1).max(32)).max(12).optional() })).handler(async ({ data }) => { requireAuth(); const { workId, pages, ...payload } = data; return updateWork(workId, { ...payload, outlinePages: pages }) })
+export const updateWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ topic: z.string().trim().min(2).max(300).optional(), outlineRaw: z.string().max(30000).optional(), pages: z.array(pageSchema).min(1).max(18).optional(), selectedTitle: z.string().max(80).optional(), copywriting: z.string().max(1000).optional(), tags: z.array(z.string().trim().min(1).max(32)).max(12).optional(), status: z.enum(['draft', 'outline', 'generating', 'partial_failed', 'result', 'unpublishable']).optional() })).handler(async ({ data }) => { requireAuth(); const { workId, pages, ...payload } = data; return updateWork(workId, { ...payload, outlinePages: pages }) })
 export const generateContentFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => {
   requireAuth()
   const work = await getWork(data.workId)
