@@ -15,10 +15,3 @@ const normalizedEnvironment = Object.fromEntries(
 )
 
 export const env = envSchema.parse(normalizedEnvironment)
-
-export function configuredCapabilities() {
-  return {
-    publish: Boolean(env.AICONDUCTOR_API_KEY),
-    auth: Boolean(env.APP_ACCESS_PASSWORD && env.SESSION_SECRET),
-  }
-}

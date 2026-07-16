@@ -144,7 +144,8 @@ Letter spacing remains `0`. Operational pages must not use marketing-scale displ
 ### Works and Settings
 
 - Works use two-column horizontal management cards without requiring additional cover data.
-- Settings use one white surface divided by hairlines; options use quiet fills and red only for the selected confirmation mark.
+- Settings separate text and image model categories; each provider owns one independent white configuration surface that can be repeated as new channels are added.
+- Provider panels keep their API key, model choices and relevant generation parameters together instead of using a global service-status area.
 - Text and image API keys use password inputs and only expose configured/unconfigured status after saving; stored values are never rendered back into the form.
 
 ### Login

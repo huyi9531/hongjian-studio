@@ -6,7 +6,6 @@ import { regenerateWorkImage } from './services/generation.server'
 import { publishWork } from './services/publish.server'
 import { getModelCapabilities, getStudioPreferences, saveStudioPreferences } from './services/settings.server'
 import { createWork, deleteWork, getWork, listWorks, updateWork } from './services/work.server'
-import { configuredCapabilities } from './env.server'
 import { imagePromptModes, seedreamModels, supportedSeedreamSizes, textModels } from '@/lib/studio-preferences'
 
 const pageSchema = z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })
@@ -31,13 +30,13 @@ export const deleteWorkFn = createServerFn({ method: 'POST' }).validator(workIdS
 export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(async () => {
   requireAuth()
   const [preferences, modelCapabilities] = await Promise.all([getStudioPreferences(), getModelCapabilities()])
-  return { preferences, capabilities: { ...modelCapabilities, publish: configuredCapabilities().publish } }
+  return { preferences, capabilities: modelCapabilities }
 })
 export const saveStudioPreferencesFn = createServerFn({ method: 'POST' }).validator(studioPreferencesSchema).handler(async ({ data }) => {
   requireAuth()
   const { textApiKey, imageApiKey, ...preferences } = data
   const saved = await saveStudioPreferences(preferences, { textApiKey, imageApiKey })
-  return { preferences: saved.preferences, capabilities: { ...saved.capabilities, publish: configuredCapabilities().publish } }
+  return saved
 })
 const referenceSchema = z.object({
   filename: z.string().trim().min(1).max(255),
