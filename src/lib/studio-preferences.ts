@@ -6,6 +6,13 @@ export const seedreamModels = {
 export type SeedreamModel = typeof seedreamModels[keyof typeof seedreamModels]
 export type SeedreamSize = '1K' | '2K' | '4K'
 
+export const imagePromptModes = {
+  short: 'short',
+  long: 'long',
+} as const
+
+export type ImagePromptMode = typeof imagePromptModes[keyof typeof imagePromptModes]
+
 export function supportedSeedreamSizes(model: SeedreamModel): readonly SeedreamSize[] {
   return model === seedreamModels.pro ? ['1K', '2K'] : ['2K', '4K']
 }
@@ -13,4 +20,8 @@ export function supportedSeedreamSizes(model: SeedreamModel): readonly SeedreamS
 export function normalizeSeedreamModel(value: unknown): SeedreamModel {
   if (value === seedreamModels.pro || value === 'doubao-seedream-5-0-260128' || value === 'seedream-5-0-pro-260128') return seedreamModels.pro
   return seedreamModels.standard
+}
+
+export function normalizeImagePromptMode(value: unknown): ImagePromptMode {
+  return value === imagePromptModes.long ? imagePromptModes.long : imagePromptModes.short
 }

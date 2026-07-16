@@ -7,13 +7,14 @@ import { publishWork } from './services/publish.server'
 import { getStudioPreferences, saveStudioPreferences } from './services/settings.server'
 import { createWork, deleteWork, getWork, listWorks, updateWork } from './services/work.server'
 import { configuredCapabilities } from './env.server'
-import { seedreamModels, supportedSeedreamSizes } from '@/lib/studio-preferences'
+import { imagePromptModes, seedreamModels, supportedSeedreamSizes } from '@/lib/studio-preferences'
 
 const pageSchema = z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })
 const workIdSchema = z.object({ workId: z.string().uuid() })
 const studioPreferencesSchema = z.object({
   imageModel: z.enum([seedreamModels.standard, seedreamModels.pro]),
   imageSize: z.enum(['1K', '2K', '4K']),
+  imagePromptMode: z.enum([imagePromptModes.short, imagePromptModes.long]),
 }).superRefine((value, context) => {
   const supported = supportedSeedreamSizes(value.imageModel)
   if (!supported.includes(value.imageSize)) context.addIssue({ code: 'custom', path: ['imageSize'], message: '该模型不支持所选清晰度' })
@@ -46,9 +47,9 @@ export const generateContentFn = createServerFn({ method: 'POST' }).validator(wo
   const content = await generateNoteContent(work.topic, work.outlineRaw)
   return updateWork(data.workId, { titles: content.titles, selectedTitle: content.titles[0] ?? '', copywriting: content.copywriting, tags: content.tags })
 })
-export const regenerateImageFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ pageIndex: z.number().int().min(0).max(17), model: z.enum([seedreamModels.standard, seedreamModels.pro]), size: z.enum(['1K', '2K', '4K']) })).handler(async ({ data }) => {
+export const regenerateImageFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ pageIndex: z.number().int().min(0).max(17), model: z.enum([seedreamModels.standard, seedreamModels.pro]), size: z.enum(['1K', '2K', '4K']), promptMode: z.enum([imagePromptModes.short, imagePromptModes.long]) })).handler(async ({ data }) => {
   requireAuth()
   if (!supportedSeedreamSizes(data.model).includes(data.size)) throw new Error('该模型不支持所选清晰度')
-  return regenerateWorkImage(data.workId, data.pageIndex, data.model, data.size)
+  return regenerateWorkImage(data.workId, data.pageIndex, data.model, data.size, data.promptMode)
 })
 export const publishWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ title: z.string().trim().min(1).max(80), content: z.string().max(1000) })).handler(async ({ data }) => { requireAuth(); return publishWork(data.workId, data.title, data.content) })

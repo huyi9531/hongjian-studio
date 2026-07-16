@@ -216,7 +216,7 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
     setStreamBusy(true)
     setMessage('')
     try {
-      const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workId: work.id, model: preferences.imageModel, size: preferences.imageSize, force }) })
+      const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workId: work.id, model: preferences.imageModel, size: preferences.imageSize, promptMode: preferences.imagePromptMode, force }) })
       let success = false
       await readSse(response, message => {
         applyStreamMessage(message)
@@ -243,7 +243,7 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
     if (streamBusy) return
     setImages(current => current.map(image => image.index === index ? { ...image, status: 'retrying', error: undefined } : image))
     try {
-      const fresh = await regenerateImageFn({ data: { workId: work.id, pageIndex: index, model: preferences.imageModel, size: preferences.imageSize } })
+      const fresh = await regenerateImageFn({ data: { workId: work.id, pageIndex: index, model: preferences.imageModel, size: preferences.imageSize, promptMode: preferences.imagePromptMode } })
       setWork(fresh)
       setImages(initialImageStates(fresh))
     } catch (cause) {
@@ -265,10 +265,10 @@ function OutlineStage({ work, saveStatus, onUpdate, onMove, onDelete, onAdd, onS
   const saveLabel = saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '已自动保存' : saveStatus === 'error' ? '保存失败' : ''
   return <div className="mx-auto max-w-[1280px]">
     <WorkspacePageHeader className="mb-7" eyebrow={<Link to="/studio" className="hover:text-foreground">创作首页</Link>} title="编辑内容大纲" description={work.topic} status={saveLabel} actions={<Button onClick={onStart}><ImagePlus />开始生成图片</Button>} />
-    <div className="grid gap-4 xl:grid-cols-2">{work.outlinePages.map((page, index) => <article key={page.index} draggable onDragStart={() => setDragged(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragged !== null) onMove(dragged, index); setDragged(null) }} className="flex min-h-80 flex-col rounded-2xl bg-card p-5">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{work.outlinePages.map((page, index) => <article key={page.index} draggable onDragStart={() => setDragged(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragged !== null) onMove(dragged, index); setDragged(null) }} className="flex aspect-[3/4] min-h-0 flex-col rounded-2xl bg-card p-5">
       <div className="mb-4 flex items-center gap-2"><GripVertical className="size-4 cursor-grab text-muted-foreground" /><span className="text-sm font-medium">第 {index + 1} 页</span><span className="text-xs text-muted-foreground">{page.type === 'cover' ? '封面' : page.type === 'summary' ? '总结' : '内容'}</span><div className="ml-auto flex"><Button size="icon-sm" variant="ghost" aria-label="上移" title="上移" disabled={index === 0} onClick={() => onMove(index, index - 1)}><ArrowUp /></Button><Button size="icon-sm" variant="ghost" aria-label="下移" title="下移" disabled={index === work.outlinePages.length - 1} onClick={() => onMove(index, index + 1)}><ArrowDown /></Button><Button size="icon-sm" variant="ghost" aria-label="删除" title="删除" disabled={work.outlinePages.length <= 1} onClick={() => onDelete(index)}><Trash2 /></Button></div></div>
-      <Textarea value={page.content} onChange={event => onUpdate(page.index, event.target.value)} className="min-h-56 flex-1 resize-none border-0 bg-muted p-4 text-sm leading-7 shadow-none focus-visible:border-ring focus-visible:ring-2" /><span className="mt-3 text-right text-xs text-muted-foreground">{page.content.length} 字</span>
-    </article>)}<button type="button" onClick={onAdd} disabled={work.outlinePages.length >= 18} className="grid min-h-80 place-items-center rounded-2xl border border-dashed border-border bg-card text-muted-foreground transition-[background-color,color,border-color] hover:border-ring/40 hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:text-disabled-foreground"><span className="grid justify-items-center gap-2 text-sm"><Plus />添加一页</span></button></div>
+      <Textarea value={page.content} onChange={event => onUpdate(page.index, event.target.value)} className="min-h-0 flex-1 resize-none border-0 bg-muted p-4 text-sm leading-7 shadow-none focus-visible:border-ring focus-visible:ring-2" /><span className="mt-3 text-right text-xs text-muted-foreground">{page.content.length} 字</span>
+    </article>)}<button type="button" onClick={onAdd} disabled={work.outlinePages.length >= 18} className="grid aspect-[3/4] min-h-0 place-items-center rounded-2xl border border-dashed border-border bg-card text-muted-foreground transition-[background-color,color,border-color] hover:border-ring/40 hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:text-disabled-foreground"><span className="grid justify-items-center gap-2 text-sm"><Plus />添加一页</span></button></div>
   </div>
 }
 

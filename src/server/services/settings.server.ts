@@ -2,18 +2,20 @@ import '@tanstack/react-start/server-only'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.server'
 import { settings } from '../db/schema'
-import { normalizeSeedreamModel, seedreamModels, supportedSeedreamSizes, type SeedreamModel, type SeedreamSize } from '@/lib/studio-preferences'
+import { imagePromptModes, normalizeImagePromptMode, normalizeSeedreamModel, seedreamModels, supportedSeedreamSizes, type ImagePromptMode, type SeedreamModel, type SeedreamSize } from '@/lib/studio-preferences'
 
 const studioPreferencesKey = 'studio_preferences'
 
 export type StudioPreferences = {
   imageModel: SeedreamModel
   imageSize: SeedreamSize
+  imagePromptMode: ImagePromptMode
 }
 
 export const defaultStudioPreferences: StudioPreferences = {
   imageModel: seedreamModels.pro,
   imageSize: '2K',
+  imagePromptMode: imagePromptModes.short,
 }
 
 export async function getStudioPreferences(): Promise<StudioPreferences> {
@@ -23,7 +25,8 @@ export async function getStudioPreferences(): Promise<StudioPreferences> {
   const imageModel = normalizeSeedreamModel(saved.imageModel)
   const sizes = supportedSeedreamSizes(imageModel)
   const imageSize = saved.imageSize && sizes.includes(saved.imageSize) ? saved.imageSize : '2K'
-  return { imageModel, imageSize }
+  const imagePromptMode = normalizeImagePromptMode(saved.imagePromptMode)
+  return { imageModel, imageSize, imagePromptMode }
 }
 
 export async function saveStudioPreferences(value: StudioPreferences) {

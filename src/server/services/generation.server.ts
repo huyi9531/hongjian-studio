@@ -1,5 +1,5 @@
 import '@tanstack/react-start/server-only'
-import type { SeedreamModel, SeedreamSize } from '@/lib/studio-preferences'
+import { imagePromptModes, type ImagePromptMode, type SeedreamModel, type SeedreamSize } from '@/lib/studio-preferences'
 import { generateSeedreamImage } from './ai.server'
 import { getReferenceDataUrls, getWork, updateWork, upsertImage, type OutlinePage } from './work.server'
 
@@ -8,7 +8,16 @@ export type GenerationEvent = {
   data: Record<string, unknown>
 }
 
-function imagePrompt(page: OutlinePage, topic: string, outline: string) {
+export function buildImagePrompt(page: OutlinePage, topic: string, outline: string, mode: ImagePromptMode) {
+  if (mode === imagePromptModes.short) return `生成一张小红书风格的竖版图文内容图片（3:4）。
+不要带有任何小红书 Logo、用户 ID 或水印；参考图片如有水印或 Logo，请勿复现。
+
+页面类型：${page.type}
+页面内容：
+${page.content}
+
+要求：清新精致，文字完整清晰，信息层次明确，排版美观并保留合理留白，适合手机阅读。不要生成手机边框或白色留边。`
+
   return `请生成一张小红书风格的图文内容图片。
 不要带有任何小红书 Logo、用户 ID 或水印；参考图片如有水印或 Logo，请勿复现。
 
@@ -27,11 +36,11 @@ ${topic}
 ${outline}`
 }
 
-async function generatePage(workId: string, page: OutlinePage, model: SeedreamModel, size: SeedreamSize, references: string[]) {
+async function generatePage(workId: string, page: OutlinePage, model: SeedreamModel, size: SeedreamSize, references: string[], promptMode: ImagePromptMode) {
   await upsertImage(workId, page.index, { status: 'generating', error: null })
   try {
     const work = await getWork(workId)
-    const generated = await generateSeedreamImage(imagePrompt(page, work.topic, work.outlineRaw), model, size, workId, page.index, references)
+    const generated = await generateSeedreamImage(buildImagePrompt(page, work.topic, work.outlineRaw, promptMode), model, size, workId, page.index, references)
     await upsertImage(workId, page.index, { status: 'done', error: null, ...generated })
     const refreshed = await getWork(workId)
     const image = refreshed.images.find(item => item.pageIndex === page.index)
@@ -63,7 +72,7 @@ function errorEvent(index: number, message: string, phase = 'content', cached = 
   return { event: 'error', data: { index, status: 'error', message, retryable: true, phase, cached } }
 }
 
-export async function generateWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, force = false) {
+export async function generateWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, force = false, promptMode: ImagePromptMode = imagePromptModes.short) {
   const work = await getWork(workId)
   const completedImages = work.images.filter(image => image.status === 'done')
   if (!force && completedImages.length) {
@@ -87,7 +96,7 @@ export async function generateWorkImages(workId: string, model: SeedreamModel, s
 
   if (cover) {
     emit({ event: 'progress', data: { index: cover.index, status: 'generating', message: '正在生成封面...', current: 1, total: work.outlinePages.length, phase: 'cover' } })
-    const result = await generatePage(workId, cover, model, size, userReferences)
+    const result = await generatePage(workId, cover, model, size, userReferences, promptMode)
     if (result.ok) {
       completed += 1
       coverReference = result.image?.sourceUrl ?? undefined
@@ -102,7 +111,7 @@ export async function generateWorkImages(workId: string, model: SeedreamModel, s
     emit({ event: 'progress', data: { status: 'batch_start', message: `开始并发生成 ${otherPages.length} 页内容...`, current: completed, total: work.outlinePages.length, phase: 'content' } })
     for (const page of otherPages) emit({ event: 'progress', data: { index: page.index, status: 'generating', current: completed + 1, total: work.outlinePages.length, phase: 'content' } })
     await runConcurrent(otherPages, 3, async page => {
-      const result = await generatePage(workId, page, model, size, [...userReferences, ...(coverReference ? [coverReference] : [])])
+      const result = await generatePage(workId, page, model, size, [...userReferences, ...(coverReference ? [coverReference] : [])], promptMode)
       if (result.ok) {
         completed += 1
         emit(doneEvent(page.index, result.image?.id))
@@ -117,7 +126,7 @@ export async function generateWorkImages(workId: string, model: SeedreamModel, s
   emit({ event: 'finish', data: { success: failedIndices.length === 0, task_id: workId, total: work.outlinePages.length, completed, failed: failedIndices.length, failed_indices: failedIndices } })
 }
 
-export async function retryFailedWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void) {
+export async function retryFailedWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, promptMode: ImagePromptMode = imagePromptModes.short) {
   const work = await getWork(workId)
   const pages = work.outlinePages.filter(page => work.images.find(image => image.pageIndex === page.index)?.status !== 'done')
   emit({ event: 'retry_start', data: { total: pages.length, message: `开始重试 ${pages.length} 张失败的图片` } })
@@ -127,7 +136,7 @@ export async function retryFailedWorkImages(workId: string, model: SeedreamModel
   let completed = 0
   let failed = 0
   await runConcurrent(pages, 3, async page => {
-    const result = await generatePage(workId, page, model, size, [...references, ...(coverImage && page.index !== coverPage?.index ? [coverImage] : [])])
+    const result = await generatePage(workId, page, model, size, [...references, ...(coverImage && page.index !== coverPage?.index ? [coverImage] : [])], promptMode)
     if (result.ok) {
       completed += 1
       emit(doneEvent(page.index, result.image?.id))
@@ -140,14 +149,14 @@ export async function retryFailedWorkImages(workId: string, model: SeedreamModel
   emit({ event: 'retry_finish', data: { success: failed === 0, total: pages.length, completed, failed } })
 }
 
-export async function regenerateWorkImage(workId: string, pageIndex: number, model: SeedreamModel, size: SeedreamSize) {
+export async function regenerateWorkImage(workId: string, pageIndex: number, model: SeedreamModel, size: SeedreamSize, promptMode: ImagePromptMode = imagePromptModes.short) {
   const work = await getWork(workId)
   const page = work.outlinePages.find(item => item.index === pageIndex)
   if (!page) throw new Error('大纲中不存在该页面')
   const references = await getReferenceDataUrls(workId)
   const coverPage = work.outlinePages.find(item => item.type === 'cover') ?? work.outlinePages[0]
   const coverImage = work.images.find(image => image.pageIndex === coverPage?.index && image.status === 'done')?.sourceUrl
-  const result = await generatePage(workId, page, model, size, [...references, ...(coverImage && page.index !== coverPage?.index ? [coverImage] : [])])
+  const result = await generatePage(workId, page, model, size, [...references, ...(coverImage && page.index !== coverPage?.index ? [coverImage] : [])], promptMode)
   if (!result.ok) throw new Error(result.message)
   return getWork(workId)
 }

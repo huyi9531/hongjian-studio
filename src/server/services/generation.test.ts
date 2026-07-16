@@ -64,6 +64,19 @@ describe('generateWorkImages', () => {
     expect(state.status).toBe('result')
   })
 
+  it('uses the short image prompt by default and supports the long prompt mode', async () => {
+    await generateWorkImages('11111111-1111-4111-8111-111111111111', 'doubao-seedream-5-0-pro-260628', '2K', () => {})
+    expect(state.generate.mock.calls[0][0]).toContain('页面内容')
+    expect(state.generate.mock.calls[0][0]).not.toContain('完整内容大纲')
+
+    state.images.clear()
+    state.status = 'outline'
+    state.generate.mockClear()
+    await generateWorkImages('11111111-1111-4111-8111-111111111111', 'doubao-seedream-5-0-pro-260628', '2K', () => {}, false, 'long')
+    expect(state.generate.mock.calls[0][0]).toContain('完整内容大纲')
+    expect(state.generate.mock.calls[0][0]).toContain('测试主题')
+  })
+
   it('keeps partial failures retryable and does not mark the work as result', async () => {
     state.generate.mockImplementation(async (_prompt: string, _model: string, _size: string, _workId: string, pageIndex: number) => {
       if (pageIndex === 1) throw new Error('上游限流')
