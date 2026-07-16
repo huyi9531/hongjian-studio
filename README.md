@@ -12,19 +12,19 @@
 
 ## 本地开发
 
-需要 Node.js 22.12+ 和 pnpm 10。
+需要 Node.js 22.12+ 和 npm。
 
 ```bash
-pnpm install
+npm install
 Copy-Item .env.example .env.local
-pnpm dev
+npm run dev
 ```
 
 开发服务默认运行在 `http://localhost:5173`。生产服务使用端口 `12398`：
 
 ```bash
-pnpm build
-pnpm start
+npm run build
+npm run start
 ```
 
 ## 模型与环境配置
@@ -41,23 +41,10 @@ pnpm start
 | `DATABASE_URL`、`DATA_DIR` | SQLite 与图片归档位置 |
 | `XHS_PUBLISH_API_URL` | 可选的发布服务覆盖地址 |
 
-## Docker
-
-```bash
-Copy-Item .env.example .env.local
-docker compose up --build -d
-```
-
-应用在 `http://localhost:12398` 可用，作品数据库和图片归档持久化到 `./data`。
-
 ## 验证
 
 ```bash
-pnpm test
-pnpm typecheck
-pnpm build
+npm run test
+npm run typecheck
+npm run build
 ```
-
-## 署名与许可
-
-红笺基于 [RedInk](https://github.com/HisMax/RedInk) 的开源实现重写。原项目许可证保留在 [LICENSE](./LICENSE)，本项目继续遵循 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)。

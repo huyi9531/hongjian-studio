@@ -6,17 +6,17 @@ This is a TanStack Start application. Route modules live in `src/routes/`; keep 
 
 ## Build, Test, and Development Commands
 
-- `pnpm install`: install the locked pnpm 10 dependencies.
-- `pnpm dev`: run Vite locally at `http://localhost:5173`.
-- `pnpm test`: run all Vitest tests once.
-- `pnpm typecheck`: validate strict TypeScript without emitting files.
-- `pnpm build`: build client and server production bundles.
-- `pnpm start`: run the production server using `.env.local` when present.
-- `pnpm db:generate` / `pnpm db:migrate`: generate and apply Drizzle migrations.
+- `npm install`: install the dependencies.
+- `npm run dev`: run Vite locally at `http://localhost:5173`.
+- `npm run test`: run all Vitest tests once.
+- `npm run typecheck`: validate strict TypeScript without emitting files.
+- `npm run build`: build client and server production bundles.
+- `npm run start`: run the production server using `.env.local` when present.
+- `npm run db:generate` / `npm run db:migrate`: generate and apply Drizzle migrations.
 
 ## Coding Style & Naming Conventions
 
-Use TypeScript, React function components, two-space indentation, single quotes, and the existing semicolon-free style. Use `PascalCase` for components, `camelCase` for functions and variables, and descriptive kebab-case route filenames where applicable. Prefer the `@/` alias for imports from `src/`. Reuse existing UI primitives and utilities before introducing dependencies or abstractions. No formatter or linter is configured, so preserve nearby formatting and run `pnpm typecheck`.
+Use TypeScript, React function components, two-space indentation, single quotes, and the existing semicolon-free style. Use `PascalCase` for components, `camelCase` for functions and variables, and descriptive kebab-case route filenames where applicable. Prefer the `@/` alias for imports from `src/`. Reuse existing UI primitives and utilities before introducing dependencies or abstractions. No formatter or linter is configured, so preserve nearby formatting and run `npm run typecheck`.
 
 ## Testing Guidelines
 
