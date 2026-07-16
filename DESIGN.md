@@ -110,7 +110,8 @@ Letter spacing remains `0`. Operational pages must not use marketing-scale displ
 
 - Media remains 3:4 with 12-16px radius.
 - Labels and state metadata sit below the image.
-- Regenerate controls appear over media on hover/focus without lifting the full card.
+- Result cards reveal “修改大纲” and “重新生成” in a bottom overlay on hover/focus without lifting the full card.
+- Result overlays use translucent black with white text and a subtle light divider so the action bar remains distinct from both the image and page canvas.
 
 ### Empty and Error States
 
@@ -129,14 +130,15 @@ Letter spacing remains `0`. Operational pages must not use marketing-scale displ
 
 ### Outline Management
 
-- Two columns on wide screens, one column below the desktop breakpoint.
-- Each page is a white 20px card with a quiet inner editor.
+- Three columns on wide screens, two on tablet and one on mobile.
+- Each page is a 3:4 white 20px card with a quiet inner editor.
 - Reorder and delete actions remain compact icon buttons.
 
 ### Generation and Results
 
 - Progress uses interaction blue, not brand red.
 - Preserve a 3:4 image grid and explicit waiting, generating, success and failure states.
+- Allow each completed result image to edit its matching outline in a dialog, with separate save and save-and-regenerate actions.
 - Result editing uses a main column plus a white, sticky QR publishing sidebar.
 
 ### Works and Settings
