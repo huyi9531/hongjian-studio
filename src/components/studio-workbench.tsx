@@ -121,7 +121,7 @@ export function NewWork() {
           {previews.length > 0 && <div className="flex flex-wrap gap-3 px-3 pb-3">{previews.map((preview, index) => <div key={preview} className="relative size-20 overflow-hidden rounded-xl bg-card"><img src={preview} alt={`参考图 ${index + 1}`} className="size-full object-cover" /><button type="button" aria-label={`移除参考图 ${index + 1}`} onClick={() => removeFile(index)} className="absolute top-1 right-1 grid size-7 min-h-0 place-items-center rounded-full bg-black/65 text-white transition-colors hover:bg-black/80"><X className="size-3.5" /></button></div>)}</div>}
           <div className="flex flex-wrap items-center gap-3 border-t border-hairline px-2 pt-3">
             <label className="flex h-11 cursor-pointer items-center gap-2 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-card hover:text-foreground" title="添加参考图片"><Upload className="size-5" /><span>添加参考图片</span><input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={busy || files.length >= 5} onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /></label>
-            <span className="mr-auto text-xs text-muted-foreground">{files.length}/5 · PNG、JPG、WebP，单张不超过 8MB</span>
+            <span className="mr-auto text-xs text-muted-foreground">{files.length}/5 · 单张不超过 8MB</span>
             <Button type="submit" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}生成大纲</Button>
           </div>
         </div>
