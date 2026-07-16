@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeSeedreamModel, seedreamModels, supportedSeedreamSizes } from './studio-preferences'
+import { normalizeSeedreamModel, normalizeTextModel, seedreamModels, supportedSeedreamSizes, textModels } from './studio-preferences'
 
 describe('Seedream preferences', () => {
+  it('supports both Doubao Seed 2.1 text models and defaults to Pro', () => {
+    expect(textModels.pro).toBe('doubao-seed-2-1-pro-260628')
+    expect(textModels.turbo).toBe('doubao-seed-2-1-turbo-260628')
+    expect(normalizeTextModel(textModels.turbo)).toBe(textModels.turbo)
+    expect(normalizeTextModel('unknown')).toBe(textModels.pro)
+  })
+
   it('uses the official Ark model identifiers', () => {
     expect(seedreamModels.standard).toBe('doubao-seedream-4-5-251128')
     expect(seedreamModels.pro).toBe('doubao-seedream-5-0-pro-260628')

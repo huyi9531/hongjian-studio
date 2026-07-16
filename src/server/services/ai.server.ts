@@ -3,14 +3,15 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { env } from '../env.server'
+import { getModelCredentials, getStudioPreferences } from './settings.server'
 import type { OutlinePage } from './work.server'
 import type { SeedreamModel, SeedreamSize } from '@/lib/studio-preferences'
 
 async function textCompletion(prompt: string, images: string[] = []) {
-  if (!env.TEXT_API_KEY || !env.TEXT_BASE_URL || !env.TEXT_MODEL) throw new Error('文本模型环境变量未配置')
-  const endpoint = env.TEXT_ENDPOINT.startsWith('/') ? env.TEXT_ENDPOINT : `/${env.TEXT_ENDPOINT}`
+  const [preferences, credentials] = await Promise.all([getStudioPreferences(), getModelCredentials()])
+  if (!credentials.textApiKey) throw new Error('请先在设置中配置文本模型 API Key')
   const content = images.length ? [{ type: 'text', text: prompt }, ...images.map(imageUrl => ({ type: 'image_url', image_url: { url: imageUrl } }))] : prompt
-  const response = await fetch(`${env.TEXT_BASE_URL.replace(/\/$/, '')}${endpoint}`, { method: 'POST', headers: { Authorization: `Bearer ${env.TEXT_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: env.TEXT_MODEL, messages: [{ role: 'user', content }], temperature: 0.8 }) })
+  const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${credentials.textApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: preferences.textModel, messages: [{ role: 'user', content }], temperature: 0.8 }) })
   if (!response.ok) throw new Error(`文本模型请求失败: ${response.status}`)
   const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
   return json.choices?.[0]?.message?.content?.trim() ?? ''
@@ -33,9 +34,10 @@ export async function generateNoteContent(topic: string, outline: string) {
 }
 
 export async function generateSeedreamImage(prompt: string, model: SeedreamModel, size: SeedreamSize, workId: string, pageIndex: number, referenceImages: string[] = []) {
-  if (!env.VOLCENGINE_API_KEY) throw new Error('火山引擎 API Key 未配置')
+  const credentials = await getModelCredentials()
+  if (!credentials.imageApiKey) throw new Error('请先在设置中配置图片模型 API Key')
   const maxReferences = model.includes('5-0-pro') ? 10 : 14
-  const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${env.VOLCENGINE_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, size, ...(referenceImages.length ? { image: referenceImages.slice(0, maxReferences) } : {}) }) })
+  const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${credentials.imageApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, size, ...(referenceImages.length ? { image: referenceImages.slice(0, maxReferences) } : {}) }) })
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 500).replace(/\s+/g, ' ').trim()
     throw new Error(`图片模型请求失败: ${response.status}${detail ? ` - ${detail}` : ''}`)

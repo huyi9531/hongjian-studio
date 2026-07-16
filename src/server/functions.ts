@@ -4,17 +4,20 @@ import { isAuthenticated, requireAuth, signIn } from './auth.server'
 import { generateNoteContent, generateOutline } from './services/ai.server'
 import { regenerateWorkImage } from './services/generation.server'
 import { publishWork } from './services/publish.server'
-import { getStudioPreferences, saveStudioPreferences } from './services/settings.server'
+import { getModelCapabilities, getStudioPreferences, saveStudioPreferences } from './services/settings.server'
 import { createWork, deleteWork, getWork, listWorks, updateWork } from './services/work.server'
 import { configuredCapabilities } from './env.server'
-import { imagePromptModes, seedreamModels, supportedSeedreamSizes } from '@/lib/studio-preferences'
+import { imagePromptModes, seedreamModels, supportedSeedreamSizes, textModels } from '@/lib/studio-preferences'
 
 const pageSchema = z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })
 const workIdSchema = z.object({ workId: z.string().uuid() })
 const studioPreferencesSchema = z.object({
+  textModel: z.enum([textModels.pro, textModels.turbo]),
   imageModel: z.enum([seedreamModels.standard, seedreamModels.pro]),
   imageSize: z.enum(['1K', '2K', '4K']),
   imagePromptMode: z.enum([imagePromptModes.short, imagePromptModes.long]),
+  textApiKey: z.string().trim().min(8).max(512).optional(),
+  imageApiKey: z.string().trim().min(8).max(512).optional(),
 }).superRefine((value, context) => {
   const supported = supportedSeedreamSizes(value.imageModel)
   if (!supported.includes(value.imageSize)) context.addIssue({ code: 'custom', path: ['imageSize'], message: '该模型不支持所选清晰度' })
@@ -25,8 +28,17 @@ export const signInFn = createServerFn({ method: 'POST' }).validator(z.object({ 
 export const listWorksFn = createServerFn({ method: 'GET' }).validator(z.object({ query: z.string().max(120).optional() })).handler(async ({ data }) => { requireAuth(); return listWorks(data.query ?? '') })
 export const getWorkFn = createServerFn({ method: 'GET' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); return getWork(data.workId) })
 export const deleteWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); await deleteWork(data.workId); return { ok: true } })
-export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(async () => { requireAuth(); return { preferences: await getStudioPreferences(), capabilities: configuredCapabilities() } })
-export const saveStudioPreferencesFn = createServerFn({ method: 'POST' }).validator(studioPreferencesSchema).handler(async ({ data }) => { requireAuth(); return saveStudioPreferences(data) })
+export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(async () => {
+  requireAuth()
+  const [preferences, modelCapabilities] = await Promise.all([getStudioPreferences(), getModelCapabilities()])
+  return { preferences, capabilities: { ...modelCapabilities, publish: configuredCapabilities().publish } }
+})
+export const saveStudioPreferencesFn = createServerFn({ method: 'POST' }).validator(studioPreferencesSchema).handler(async ({ data }) => {
+  requireAuth()
+  const { textApiKey, imageApiKey, ...preferences } = data
+  const saved = await saveStudioPreferences(preferences, { textApiKey, imageApiKey })
+  return { preferences: saved.preferences, capabilities: { ...saved.capabilities, publish: configuredCapabilities().publish } }
+})
 const referenceSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),

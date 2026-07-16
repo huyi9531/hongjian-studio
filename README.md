@@ -2,7 +2,7 @@
 
 红笺是一个单人自托管的中文图文创作工作台。围绕同一份作品完成主题、大纲、图片、笔记文案与扫码发布确认。发布时确认内容后直接生成二维码，不提供底层存储选项。
 
-项目由 TanStack Start、React、SQLite 和 Drizzle 驱动。模型与发布服务的密钥只在服务端环境变量中读取，浏览器和数据库都不会保存密钥。
+项目由 TanStack Start、React、SQLite 和 Drizzle 驱动。文本与图片模型密钥由用户在设置页配置，仅保存在本机服务端 SQLite 中，保存后不会回传浏览器。访问控制与发布服务密钥继续通过服务端环境变量提供。
 
 ## 创作流程
 
@@ -27,14 +27,14 @@ pnpm build
 pnpm start
 ```
 
-## 环境变量
+## 模型与环境配置
 
-在 `.env.local` 中配置以下内容。除数据库和数据目录外，其余变量均为服务端密钥，不应提交到版本库。
+在设置页选择 Doubao Seed 2.1 Pro 或 Turbo 作为文本模型，并分别配置文本模型与 Seedream 图片模型的方舟 API Key。参考图片会以方舟 Chat API 支持的 Base64 `image_url` 格式发送给所选文本模型。
+
+在 `.env.local` 中配置访问控制、扫码发布和运行时路径。除数据库和数据目录外，其余变量均为服务端密钥，不应提交到版本库。
 
 | 变量 | 用途 |
 | --- | --- |
-| `TEXT_API_KEY`、`TEXT_BASE_URL`、`TEXT_MODEL` | OpenAI 兼容文本模型 |
-| `VOLCENGINE_API_KEY` | 火山引擎 Seedream 图片生成 |
 | `AICONDUCTOR_API_KEY` | 小红书扫码发布 |
 | `APP_ACCESS_PASSWORD` | 单人访问密码 |
 | `SESSION_SECRET` | Cookie 签名密钥 |
