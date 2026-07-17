@@ -12,7 +12,7 @@ export const Route = createFileRoute('/works')({
   component: Works,
 })
 
-const statusLabels: Record<string, string> = { draft: '草稿', outline: '大纲', generating: '后台生成中', partial_failed: '生成部分失败', result: '已完成', publishable: '可发布', unpublishable: '不可发布', published: '已发布' }
+const statusLabels: Record<string, string> = { draft: '草稿', outline: '大纲', generating: '后台生成中', interrupted: '生成已中断', partial_failed: '生成部分失败', result: '已完成', checking_publishability: '正在校验发布', publishable: '可发布', unpublishable: '不可发布', published: '已发布' }
 
 function Works() {
   const works = Route.useLoaderData()
@@ -42,6 +42,7 @@ function Works() {
         <div className="aspect-[3/4] overflow-hidden rounded-xl bg-muted">{work.coverImageUrl ? <img src={work.coverImageUrl} alt={`${work.topic}封面`} className="size-full object-cover" /> : <span className="grid size-full place-items-center text-muted-foreground"><FileText size={28} /></span>}</div>
         <h2 className="mt-3 line-clamp-2 min-h-11 text-sm leading-[22px] font-medium sm:text-base sm:leading-6">{work.topic}</h2>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>{work.updatedAt.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}</span><span>{statusLabels[work.status] ?? work.status}</span></div>
+        {work.archiveUnavailable && <p className="mt-2 text-xs text-muted-foreground">部分图片未归档</p>}
       </Link>
       <Button type="button" size="icon-sm" variant="secondary" className="absolute top-4 right-4 size-9 min-h-9 bg-card/90 shadow-default backdrop-blur-sm hover:bg-card" aria-label={`删除${work.topic}`} title="删除作品" disabled={Boolean(deletingId)} onClick={() => void removeWork(work.id, work.topic)}>{deletingId === work.id ? <LoaderCircle className="animate-spin" /> : <Trash2 />}</Button>
     </article>)}</div> : <div className="mt-7 grid min-h-96 place-items-center rounded-2xl bg-card p-8 text-center"><div><span className="mx-auto grid size-14 place-items-center rounded-full bg-muted"><FileText className="size-6 text-muted-foreground" /></span><h2 className="mt-5 text-base font-medium">还没有作品</h2><p className="mt-2 text-sm text-muted-foreground">从一个主题开始创建第一份图文。</p><Button asChild className="mt-6"><Link to="/studio"><Plus />新建作品</Link></Button></div></div>}

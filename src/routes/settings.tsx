@@ -58,6 +58,8 @@ function SettingsPage() {
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState('')
   const [saveFailed, setSaveFailed] = useState(false)
+  const [clearTextApiKey, setClearTextApiKey] = useState(false)
+  const [clearImageApiKey, setClearImageApiKey] = useState(false)
   const sizes = supportedSeedreamSizes(preferences.imageModel)
 
   async function save() {
@@ -69,11 +71,15 @@ function SettingsPage() {
         ...preferences,
         ...(textApiKey.trim() ? { textApiKey: textApiKey.trim() } : {}),
         ...(imageApiKey.trim() ? { imageApiKey: imageApiKey.trim() } : {}),
+        ...(clearTextApiKey ? { clearTextApiKey: true } : {}),
+        ...(clearImageApiKey ? { clearImageApiKey: true } : {}),
       } })
       setPreferences(saved.preferences)
       setCapabilities(saved.capabilities)
       setTextApiKey('')
       setImageApiKey('')
+      setClearTextApiKey(false)
+      setClearImageApiKey(false)
       setMessage('设置已保存，新请求将使用这些模型与密钥。')
     } catch (error) {
       setSaveFailed(true)
@@ -98,6 +104,7 @@ function SettingsPage() {
         <div className="mb-4"><div className="flex items-center gap-2"><MessageSquareText className="size-5 text-muted-foreground" aria-hidden="true" /><h2 className="text-lg font-semibold text-balance">文本模型</h2></div><p className="mt-1.5 max-w-[60ch] text-sm text-pretty text-muted-foreground">负责参考图理解、内容大纲、标题和发布文案。</p></div>
         <ProviderPanel icon={MessageSquareText} type="文本生成" configured={capabilities.text}>
           <CredentialField id="text-api-key" label="API Key" value={textApiKey} configured={capabilities.text} onChange={setTextApiKey} />
+          {capabilities.text && <Button className="mt-3" type="button" variant="outline" onClick={() => { if (window.confirm('确定清空本机保存的文本模型 API Key 吗？')) setClearTextApiKey(true) }} disabled={pending || clearTextApiKey}>{clearTextApiKey ? '将于保存时清空' : '清空文本 API Key'}</Button>}
           <div className="mt-6"><Label className="mb-2.5 block">默认模型</Label><div className="grid gap-3 sm:grid-cols-2">{textModelOptions.map(model => <button key={model.value} type="button" aria-pressed={preferences.textModel === model.value} onClick={() => setPreferences(current => ({ ...current, textModel: model.value }))} className={optionClass(preferences.textModel === model.value)}><span><span className="block text-sm font-medium">{model.label}</span><span className="mt-1.5 block max-w-[30ch] text-xs leading-5 text-muted-foreground">{model.description}</span></span>{preferences.textModel === model.value && <SelectionMark />}</button>)}</div></div>
           <div className="mt-6 flex items-center gap-4 border-t border-hairline pt-4"><div className="min-w-0"><Label htmlFor="text-thinking" className="text-sm font-medium">深度思考</Label><p className="mt-1 text-xs leading-5 text-pretty text-muted-foreground">开启后进行多步骤分析，结果更严谨，但响应时间和 Token 消耗会增加。</p></div><Switch id="text-thinking" className="ml-auto" checked={preferences.textThinkingEnabled} onCheckedChange={checked => setPreferences(current => ({ ...current, textThinkingEnabled: checked }))} aria-label="深度思考" /></div>
         </ProviderPanel>
@@ -107,6 +114,7 @@ function SettingsPage() {
         <div className="mb-4"><div className="flex items-center gap-2"><ImageIcon className="size-5 text-muted-foreground" aria-hidden="true" /><h2 className="text-lg font-semibold text-balance">图片模型</h2></div><p className="mt-1.5 max-w-[60ch] text-sm text-pretty text-muted-foreground">负责封面和内容页生成，并统一控制清晰度与提示词详细程度。</p></div>
         <ProviderPanel icon={ImageIcon} type="图片生成" configured={capabilities.image}>
           <CredentialField id="image-api-key" label="API Key" value={imageApiKey} configured={capabilities.image} onChange={setImageApiKey} />
+          {capabilities.image && <Button className="mt-3" type="button" variant="outline" onClick={() => { if (window.confirm('确定清空本机保存的图片模型 API Key 吗？')) setClearImageApiKey(true) }} disabled={pending || clearImageApiKey}>{clearImageApiKey ? '将于保存时清空' : '清空图片 API Key'}</Button>}
           <div className="mt-6"><Label className="mb-2.5 block">默认模型</Label><div className="grid gap-3 sm:grid-cols-2">{imageModelOptions.map(model => <button key={model.value} type="button" aria-pressed={preferences.imageModel === model.value} onClick={() => setPreferences(current => ({ ...current, imageModel: model.value, imageSize: '2K' }))} className={optionClass(preferences.imageModel === model.value)}><span><span className="block text-sm font-medium">{model.label}</span><span className="mt-1.5 block max-w-[28ch] text-xs leading-5 text-muted-foreground">{model.description}</span></span>{preferences.imageModel === model.value && <SelectionMark />}</button>)}</div></div>
           <div className="mt-6 grid gap-6 border-t border-hairline pt-6 sm:grid-cols-2">
             <div><Label className="mb-2.5 block">默认清晰度</Label><div className="inline-flex rounded-xl bg-muted p-1">{sizes.map(size => <button key={size} type="button" aria-pressed={preferences.imageSize === size} onClick={() => setPreferences(current => ({ ...current, imageSize: size }))} className={cn('min-h-10 min-w-20 rounded-lg px-5 text-sm font-medium text-muted-foreground transition-[background-color,color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-soft', preferences.imageSize === size && 'bg-card text-foreground')}>{size}</button>)}</div></div>

@@ -5,7 +5,7 @@ import { generateNoteContent, generateOutline } from './services/ai.server'
 import { regenerateWorkImage } from './services/generation.server'
 import { publishWork } from './services/publish.server'
 import { getModelCapabilities, getStudioPreferences, saveStudioPreferences } from './services/settings.server'
-import { createWork, deleteWork, getWork, listWorks, updateWork } from './services/work.server'
+import { beginOutlineEdit, createWork, deleteWork, getWork, listWorks, updateWork } from './services/work.server'
 import { imagePromptModes, seedreamModels, supportedSeedreamSizes, textModels } from '@/lib/studio-preferences'
 
 const pageSchema = z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })
@@ -18,6 +18,8 @@ const studioPreferencesSchema = z.object({
   imagePromptMode: z.enum([imagePromptModes.short, imagePromptModes.long]),
   textApiKey: z.string().trim().min(8).max(512).optional(),
   imageApiKey: z.string().trim().min(8).max(512).optional(),
+  clearTextApiKey: z.boolean().optional(),
+  clearImageApiKey: z.boolean().optional(),
 }).superRefine((value, context) => {
   const supported = supportedSeedreamSizes(value.imageModel)
   if (!supported.includes(value.imageSize)) context.addIssue({ code: 'custom', path: ['imageSize'], message: '该模型不支持所选清晰度' })
@@ -26,7 +28,7 @@ const studioPreferencesSchema = z.object({
 export const sessionFn = createServerFn({ method: 'GET' }).handler(() => ({ authenticated: isAuthenticated() }))
 export const signInFn = createServerFn({ method: 'POST' }).validator(z.object({ password: z.string().min(1).max(256) })).handler(({ data }) => { signIn(data.password); return { ok: true } })
 export const listWorksFn = createServerFn({ method: 'GET' }).validator(z.object({ query: z.string().max(120).optional() })).handler(async ({ data }) => { requireAuth(); return listWorks(data.query ?? '') })
-export const getWorkFn = createServerFn({ method: 'GET' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); return getWork(data.workId) })
+export const getWorkFn = createServerFn({ method: 'GET' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); return getWork(data.workId, { validatePublicUrls: true }) })
 export const deleteWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); await deleteWork(data.workId); return { ok: true } })
 export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(async () => {
   requireAuth()
@@ -35,8 +37,8 @@ export const getStudioPreferencesFn = createServerFn({ method: 'GET' }).handler(
 })
 export const saveStudioPreferencesFn = createServerFn({ method: 'POST' }).validator(studioPreferencesSchema).handler(async ({ data }) => {
   requireAuth()
-  const { textApiKey, imageApiKey, ...preferences } = data
-  const saved = await saveStudioPreferences(preferences, { textApiKey, imageApiKey })
+  const { textApiKey, imageApiKey, clearTextApiKey, clearImageApiKey, ...preferences } = data
+  const saved = await saveStudioPreferences(preferences, { textApiKey, imageApiKey, clearTextApiKey, clearImageApiKey })
   return saved
 })
 const referenceSchema = z.object({
@@ -52,7 +54,8 @@ export const createWorkFn = createServerFn({ method: 'POST' }).validator(z.objec
   const id = await createWork(data.topic, outline.pages, outline.raw, references)
   return getWork(id)
 })
-export const updateWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ topic: z.string().trim().min(2).max(300).optional(), outlineRaw: z.string().max(30000).optional(), pages: z.array(pageSchema).min(1).max(18).optional(), selectedTitle: z.string().max(80).optional(), copywriting: z.string().max(1000).optional(), tags: z.array(z.string().trim().min(1).max(32)).max(12).optional(), status: z.enum(['draft', 'outline', 'generating', 'partial_failed', 'result', 'unpublishable']).optional() })).handler(async ({ data }) => { requireAuth(); const { workId, pages, ...payload } = data; return updateWork(workId, { ...payload, outlinePages: pages }) })
+export const updateWorkFn = createServerFn({ method: 'POST' }).validator(workIdSchema.extend({ topic: z.string().trim().min(2).max(300).optional(), outlineRaw: z.string().max(30000).optional(), pages: z.array(pageSchema).min(1).max(18).optional(), selectedTitle: z.string().max(80).optional(), copywriting: z.string().max(1000).optional(), tags: z.array(z.string().trim().min(1).max(32)).max(12).optional() })).handler(async ({ data }) => { requireAuth(); const { workId, pages, ...payload } = data; return updateWork(workId, { ...payload, outlinePages: pages }) })
+export const beginOutlineEditFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => { requireAuth(); return beginOutlineEdit(data.workId) })
 export const generateContentFn = createServerFn({ method: 'POST' }).validator(workIdSchema).handler(async ({ data }) => {
   requireAuth()
   const work = await getWork(data.workId)

@@ -2,6 +2,7 @@ import '@tanstack/react-start/server-only'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { env } from '../env.server'
 import { getModelCredentials, getStudioPreferences } from './settings.server'
 import type { OutlinePage } from './work.server'
@@ -29,17 +30,25 @@ async function textCompletion(prompt: string, images: string[] = []) {
 export async function generateOutline(topic: string, images: string[] = []): Promise<{ raw: string; pages: OutlinePage[] }> {
   const raw = await textCompletion(`你是一个小红书内容创作专家。请根据用户要求生成图文内容大纲。\n\n用户的要求以及说明：\n${topic}\n\n要求：第一页必须是封面；用户未指定时默认 5 页，允许 2-18 页；每页内容具体、适合后续生成图片；严格用 <page> 分隔，每页第一行标注 [封面]、[内容] 或 [总结]；直接从大纲开始，不要解释。${images.length ? '\n用户同时提供了参考图片，请结合图片内容理解主题和视觉方向。' : ''}`, images)
   const parts = raw.split(/<page>/i).map(item => item.trim()).filter(Boolean)
-  const pages = parts.map((content, index) => ({ index, type: content.startsWith('[封面]') ? 'cover' : content.startsWith('[总结]') ? 'summary' : 'content', content })) as OutlinePage[]
-  if (!pages.length) throw new Error('文本模型未返回可用大纲')
-  return { raw, pages }
+  const pages = parts.map((content, index) => ({ index, type: content.startsWith('[封面]') ? 'cover' : content.startsWith('[总结]') ? 'summary' : 'content', content }))
+  const parsed = z.array(z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })).min(1).max(18).safeParse(pages)
+  if (!parsed.success || parsed.data[0]?.type !== 'cover') throw new Error('文本模型返回的大纲格式无效：第一页必须是封面，且总页数为 1-18 页')
+  return { raw, pages: parsed.data }
 }
 
 export async function generateNoteContent(topic: string, outline: string) {
   const raw = await textCompletion(`根据主题“${topic}”和大纲生成小红书图文笔记。严格返回 JSON：{"titles":["标题1","标题2","标题3"],"copywriting":"正文","tags":["标签1","标签2"]}。标题适合 20 字内，正文不超过 850 字。大纲：${outline}`)
   const match = raw.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('文本模型未返回可解析的笔记内容')
-  const data = JSON.parse(match[0]) as { titles?: string[]; copywriting?: string; tags?: string[] }
-  return { titles: data.titles?.filter(Boolean).slice(0, 5) ?? [], copywriting: data.copywriting ?? '', tags: data.tags?.filter(Boolean).slice(0, 12) ?? [] }
+  let data: unknown
+  try { data = JSON.parse(match[0]) } catch (cause) { throw new Error('文本模型返回了无法解析的笔记内容', { cause }) }
+  const parsed = z.object({
+    titles: z.array(z.string().trim().min(1).max(80)).min(1).max(5),
+    copywriting: z.string().max(1000),
+    tags: z.array(z.string().trim().min(1).max(32)).max(12),
+  }).safeParse(data)
+  if (!parsed.success) throw new Error('文本模型返回的标题、正文或标签不符合发布要求')
+  return parsed.data
 }
 
 export async function generateSeedreamImage(prompt: string, model: SeedreamModel, size: SeedreamSize, workId: string, pageIndex: number, referenceImages: string[] = []) {
@@ -55,16 +64,27 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
   const sourceUrl = data.data?.[0]?.url
   if (!sourceUrl) throw new Error('图片模型未返回公网 URL')
   let archivePath: string | undefined
+  let archiveStatus: 'archived' | 'unavailable' = 'unavailable'
+  let archiveError: string | undefined
+  let archiveMimeType: string | undefined
   try {
     const image = await fetchWithTimeout(sourceUrl, {}, 30_000, '图片归档下载')
     if (image.ok) {
+      const contentType = image.headers.get('content-type')?.split(';')[0]
+      if (!contentType || !['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) throw new Error('图片归档下载返回了不支持的文件类型')
       const dir = join(env.DATA_DIR, 'images', workId)
       await mkdir(dir, { recursive: true })
-      archivePath = join('images', workId, `${pageIndex}-${randomUUID()}.png`)
+      const extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
+      archivePath = join('images', workId, `${pageIndex}-${randomUUID()}.${extension}`)
       await writeFile(join(env.DATA_DIR, archivePath), Buffer.from(await image.arrayBuffer()))
+      archiveStatus = 'archived'
+      archiveMimeType = contentType
+    } else {
+      archiveError = `图片归档下载失败: ${image.status}`
     }
   } catch (error) {
+    archiveError = error instanceof Error ? error.message : String(error)
     console.warn('Image archive failed; retaining the original provider URL.', { workId, pageIndex, error: error instanceof Error ? error.message : String(error) })
   }
-  return { sourceUrl, archivePath }
+  return { sourceUrl, archivePath, archiveStatus, archiveError, archiveMimeType }
 }

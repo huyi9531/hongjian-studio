@@ -11,7 +11,7 @@ export const Route = createFileRoute('/api/work-images/$imageId')({
     try {
       const image = await getImageRecord(params.imageId)
       if (!image.archivePath) return Response.json({ error: '本地图片不存在' }, { status: 404 })
-      return new Response(await readFile(join(env.DATA_DIR, image.archivePath)), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=31536000, immutable' } })
+      return new Response(await readFile(join(env.DATA_DIR, image.archivePath)), { headers: { 'Content-Type': image.archiveMimeType ?? 'application/octet-stream', 'Cache-Control': 'private, max-age=31536000, immutable' } })
     } catch (cause) {
       return Response.json({ error: cause instanceof Error ? cause.message : String(cause) }, { status: 404 })
     }

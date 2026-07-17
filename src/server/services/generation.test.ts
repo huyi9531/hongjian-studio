@@ -38,6 +38,7 @@ vi.mock('./work.server', () => ({
   updateWork: vi.fn(async (_id: string, payload: { status?: string }) => {
     if (payload.status) state.status = payload.status
   }),
+  setWorkStatus: vi.fn(async (_id: string, status: string) => { state.status = status }),
   upsertImage: vi.fn(async (_id: string, pageIndex: number, payload: { sourceUrl?: string | null; archivePath?: string | null; status?: string; error?: string | null; inputFingerprint?: string | null }) => {
     const current = state.images.get(pageIndex)
     state.images.set(pageIndex, {

@@ -23,6 +23,11 @@ export const workImages = sqliteTable('work_images', {
   status: text('status').notNull().default('pending'),
   error: text('error'),
   inputFingerprint: text('input_fingerprint'),
+  archiveStatus: text('archive_status').notNull().default('unavailable'),
+  archiveError: text('archive_error'),
+  archiveMimeType: text('archive_mime_type'),
+  publicUrlStatus: text('public_url_status').notNull().default('unknown'),
+  publicUrlCheckedAt: integer('public_url_checked_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 }, table => [uniqueIndex('work_images_work_page').on(table.workId, table.pageIndex)])

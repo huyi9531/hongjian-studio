@@ -1,11 +1,11 @@
 import '@tanstack/react-start/server-only'
 import { createHash, randomUUID } from 'node:crypto'
-import { eq, ne } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { imagePromptModes, type ImagePromptMode, type SeedreamModel, type SeedreamSize } from '@/lib/studio-preferences'
 import { db } from '../db/index.server'
 import { generationJobs } from '../db/schema'
 import { generateSeedreamImage } from './ai.server'
-import { getReferenceDataUrls, getWork, updateWork, upsertImage, type OutlinePage } from './work.server'
+import { getReferenceDataUrls, getWork, setWorkStatus, upsertImage, type OutlinePage } from './work.server'
 
 export type GenerationEvent = {
   event: 'progress' | 'complete' | 'error' | 'finish' | 'retry_start' | 'retry_finish'
@@ -100,8 +100,8 @@ async function claimGenerationJob(prepared: PreparedGeneration) {
   throw new GenerationInProgressError(job)
 }
 
-async function updateJob(workId: string, status: 'running' | 'succeeded' | 'partial_failed' | 'interrupted', completedPages: number, failedPages: number, error: string | null = null) {
-  await db.update(generationJobs).set({ status, completedPages, failedPages, error, updatedAt: new Date() }).where(eq(generationJobs.workId, workId))
+async function updateJob(job: typeof generationJobs.$inferSelect, status: 'running' | 'succeeded' | 'partial_failed' | 'interrupted', completedPages: number, failedPages: number, error: string | null = null) {
+  await db.update(generationJobs).set({ status, completedPages, failedPages, error, updatedAt: new Date() }).where(and(eq(generationJobs.workId, job.workId), eq(generationJobs.id, job.id)))
 }
 
 export async function prepareGeneration(workId: string, model: SeedreamModel, size: SeedreamSize, promptMode: ImagePromptMode = imagePromptModes.short) {
@@ -158,6 +158,7 @@ function errorEvent(index: number, message: string, phase = 'content'): Generati
 }
 
 export async function runPreparedGeneration(prepared: ClaimedGeneration, emit: (event: GenerationEvent) => void, options: { retryOnly?: boolean; forcePageIndexes?: number[] } = {}) {
+  try {
   const currentImages = new Map(prepared.work.images.map(image => [image.pageIndex, image]))
   const shouldGenerate = (page: OutlinePage) => {
     if (options.forcePageIndexes?.includes(page.index)) return true
@@ -171,7 +172,7 @@ export async function runPreparedGeneration(prepared: ClaimedGeneration, emit: (
   let failed = 0
   const failedIndexes: number[] = []
 
-  await updateWork(prepared.work.id, { status: 'generating' })
+  await setWorkStatus(prepared.work.id, 'generating')
   for (const page of completedCached) emit(doneEvent(page.index, currentImages.get(page.index)?.id, 'cached', true))
   for (const page of pendingPages) await upsertImage(prepared.work.id, page.index, { status: 'pending', error: null, inputFingerprint: prepared.pageFingerprints.get(page.index) })
 
@@ -209,9 +210,19 @@ export async function runPreparedGeneration(prepared: ClaimedGeneration, emit: (
   }
 
   const success = failed === 0
-  await updateWork(prepared.work.id, { status: success ? 'result' : 'partial_failed' })
-  await updateJob(prepared.work.id, success ? 'succeeded' : 'partial_failed', completed, failed)
+  await setWorkStatus(prepared.work.id, success ? 'result' : 'partial_failed')
+  await updateJob(prepared.job, success ? 'succeeded' : 'partial_failed', completed, failed)
   emit({ event: options.retryOnly ? 'retry_finish' : 'finish', data: { success, task_id: prepared.job.id, total: prepared.work.outlinePages.length, completed, failed, failed_indices: failedIndexes } })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    try {
+      await updateJob(prepared.job, 'interrupted', 0, 0, message)
+      await setWorkStatus(prepared.work.id, 'partial_failed')
+    } catch (statusCause) {
+      console.error('Unable to persist interrupted generation state.', { workId: prepared.work.id, jobId: prepared.job.id, error: statusCause instanceof Error ? statusCause.message : String(statusCause) })
+    }
+    throw new Error(`图片生成任务中断：${message}`, { cause })
+  }
 }
 
 export async function generateWorkImages(workId: string, model: SeedreamModel, size: SeedreamSize, emit: (event: GenerationEvent) => void, _force = false, promptMode: ImagePromptMode = imagePromptModes.short) {

@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   existing: [] as Array<Record<string, unknown>>,
   inserted: [] as Array<Record<string, unknown>>,
   fetch: vi.fn(),
+  publishability: 'publishable',
 }))
 
 vi.mock('../db/index.server', () => ({
@@ -18,8 +19,9 @@ vi.mock('../env.server', () => ({
 }))
 
 vi.mock('./work.server', () => ({
-  getWork: vi.fn(async () => ({ outlinePages: [{ index: 0, type: 'cover', content: '封面' }], images: [{ sourceUrl: 'https://images.example.test/cover.png', status: 'done', inputFingerprint: 'current' }] })),
-  updateWork: vi.fn(async () => undefined),
+  getWork: vi.fn(async () => ({ outlinePages: [{ index: 0, type: 'cover', content: '封面' }], images: [{ sourceUrl: 'https://images.example.test/cover.png', status: 'done', inputFingerprint: 'current' }], publishability: state.publishability })),
+  refreshWorkPublicUrlStatus: vi.fn(async () => undefined),
+  setWorkStatus: vi.fn(async () => undefined),
 }))
 
 import { publicationFingerprint, publishWork } from './publish.server'
@@ -29,6 +31,7 @@ describe('publishWork', () => {
     state.existing = []
     state.inserted = []
     state.fetch.mockReset()
+    state.publishability = 'publishable'
     state.fetch.mockResolvedValue(new Response(JSON.stringify({
       success: true,
       data: { id: 'publication-id', url: 'https://publish.example.test/note', qrcode: 'qr-code' },
@@ -59,7 +62,7 @@ describe('publishWork', () => {
   })
 
   it('does not call the paid endpoint when an image public URL has expired', async () => {
-    state.fetch.mockResolvedValueOnce(new Response('', { status: 404 }))
+    state.publishability = 'unpublishable'
     await expect(publishWork('work-id', '标题', '正文')).rejects.toThrow('公网链接已失效')
     expect(state.fetch.mock.calls.some(call => call[1]?.method === 'POST')).toBe(false)
   })

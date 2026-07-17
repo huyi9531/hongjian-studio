@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/index.server'
 import { publications } from '../db/schema'
 import { env } from '../env.server'
-import { getWork, updateWork } from './work.server'
+import { getWork, refreshWorkPublicUrlStatus, setWorkStatus } from './work.server'
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string) {
   try {
@@ -36,13 +36,13 @@ export async function publishWork(workId: string, title: string, content: string
   if (!env.AICONDUCTOR_API_KEY) throw new Error('扫码发布 API Key 未配置')
   if (weightedTitleLength(title) > 20) throw new Error('标题超过 20 字限制')
   if (content.length > 1000) throw new Error('正文超过 1000 字限制')
+  await refreshWorkPublicUrlStatus(workId, true)
   const work = await getWork(workId)
   if (work.images.length !== work.outlinePages.length || work.images.some(image => image.status !== 'done' || !image.inputFingerprint || !image.sourceUrl)) throw new Error('图片尚未完成或属于历史未校验结果，请重新生成后再发布')
   const images = work.images.map(image => image.sourceUrl).filter((url): url is string => Boolean(url))
   if (!images.length || images.length > 18) throw new Error('需要 1-18 张带公网 URL 的图片，旧作品请重新生成')
-  const availability = await Promise.all(images.map(isPublicImageAvailable))
-  if (availability.some(available => !available)) {
-    await updateWork(workId, { status: 'unpublishable' })
+  if (work.publishability !== 'publishable') {
+    if (work.publishability === 'unpublishable') await setWorkStatus(workId, 'unpublishable')
     throw new Error('图片公网链接已失效。当前仅保留本地归档，请重新生成图片后再发布')
   }
   const fingerprint = publicationFingerprint(title, content, images)

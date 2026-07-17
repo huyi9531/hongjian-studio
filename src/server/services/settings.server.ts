@@ -58,15 +58,15 @@ export async function getModelCapabilities() {
   return { text: Boolean(credentials.textApiKey), image: Boolean(credentials.imageApiKey) }
 }
 
-export async function saveStudioPreferences(value: StudioPreferences, credentialUpdates: Partial<ModelCredentials> = {}) {
+export async function saveStudioPreferences(value: StudioPreferences, credentialUpdates: Partial<ModelCredentials> & { clearTextApiKey?: boolean; clearImageApiKey?: boolean } = {}) {
   await db.insert(settings).values({ key: studioPreferencesKey, value }).onConflictDoUpdate({
     target: settings.key,
     set: { value },
   })
   const currentCredentials = await getModelCredentials()
   const credentials = {
-    textApiKey: credentialUpdates.textApiKey?.trim() || currentCredentials.textApiKey,
-    imageApiKey: credentialUpdates.imageApiKey?.trim() || currentCredentials.imageApiKey,
+    textApiKey: credentialUpdates.clearTextApiKey ? '' : credentialUpdates.textApiKey?.trim() || currentCredentials.textApiKey,
+    imageApiKey: credentialUpdates.clearImageApiKey ? '' : credentialUpdates.imageApiKey?.trim() || currentCredentials.imageApiKey,
   }
   await db.insert(settings).values({ key: modelCredentialsKey, value: credentials }).onConflictDoUpdate({
     target: settings.key,

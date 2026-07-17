@@ -43,6 +43,24 @@ if (!appliedMigrations.has('20260716_generation_jobs')) {
     `)
   })()
 }
+if (!appliedMigrations.has('20260717_image_reliability')) {
+  sqlite.transaction(() => {
+    const columns = sqlite.prepare('PRAGMA table_info(work_images)').all() as Array<{ name: string }>
+    const addColumn = (name: string, definition: string) => {
+      if (!columns.some(column => column.name === name)) sqlite.exec(`ALTER TABLE work_images ADD COLUMN ${definition}`)
+    }
+    addColumn('archive_status', "archive_status TEXT NOT NULL DEFAULT 'unavailable'")
+    addColumn('archive_error', 'archive_error TEXT')
+    addColumn('archive_mime_type', 'archive_mime_type TEXT')
+    addColumn('public_url_status', "public_url_status TEXT NOT NULL DEFAULT 'unknown'")
+    addColumn('public_url_checked_at', 'public_url_checked_at INTEGER')
+    sqlite.exec(`
+      UPDATE work_images
+      SET archive_status = CASE WHEN archive_path IS NULL THEN 'unavailable' ELSE 'archived' END;
+      INSERT INTO schema_migrations (id, applied_at) VALUES ('20260717_image_reliability', ${Date.now()});
+    `)
+  })()
+}
 sqlite.prepare("UPDATE generation_jobs SET status = 'interrupted', updated_at = ? WHERE status = 'running'").run(Date.now())
 
 export const db = drizzle(sqlite, { schema })
