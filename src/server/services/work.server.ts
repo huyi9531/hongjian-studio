@@ -43,19 +43,16 @@ export async function createWork(topic: string, pages: OutlinePage[], raw: strin
   return id
 }
 
-async function checkPublicUrl(url: string): Promise<PublicUrlStatus> {
+export async function checkPublicUrl(url: string): Promise<PublicUrlStatus> {
   async function request(init: RequestInit) {
     try { return await fetch(url, { ...init, signal: AbortSignal.timeout(5_000) }) } catch { return null }
   }
   const head = await request({ method: 'HEAD' })
-  if (!head) return 'unknown'
-  if (head.ok) return 'available'
-  if (head.status === 405 || head.status === 501) {
-    const get = await request({ headers: { Range: 'bytes=0-0' } })
-    if (!get) return 'unknown'
-    return get.ok ? 'available' : get.status >= 400 && get.status < 500 ? 'unavailable' : 'unknown'
-  }
-  return head.status >= 400 && head.status < 500 ? 'unavailable' : 'unknown'
+  if (head?.ok) return 'available'
+  // Image CDNs commonly reject HEAD while serving the same signed URL by GET.
+  const get = await request({ headers: { Range: 'bytes=0-0', Accept: 'image/*' } })
+  if (!get) return 'unknown'
+  return get.ok ? 'available' : get.status >= 400 && get.status < 500 ? 'unavailable' : 'unknown'
 }
 
 export async function refreshWorkPublicUrlStatus(workId: string, force = false) {
