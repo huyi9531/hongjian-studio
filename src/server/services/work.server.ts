@@ -169,21 +169,21 @@ export async function beginOutlineEdit(id: string) {
 
 export async function updateWork(id: string, payload: Partial<Pick<typeof works.$inferInsert, 'topic' | 'outlineRaw' | 'outlinePages' | 'titles' | 'selectedTitle' | 'copywriting' | 'tags'>>) {
   if (payload.outlinePages) {
-    await db.transaction(async tx => {
-      const [current] = await tx.select({ outlinePages: works.outlinePages, status: works.status }).from(works).where(eq(works.id, id)).limit(1)
+    db.transaction(tx => {
+      const current = tx.select({ outlinePages: works.outlinePages, status: works.status }).from(works).where(eq(works.id, id)).get()
       if (!current) throw new Error('作品不存在')
-      const [generationJob] = await tx.select({ status: generationJobs.status }).from(generationJobs).where(eq(generationJobs.workId, id)).limit(1)
+      const generationJob = tx.select({ status: generationJobs.status }).from(generationJobs).where(eq(generationJobs.workId, id)).get()
       if (current.status === 'generating' || generationJob?.status === 'running') throw new Error('图片正在生成，暂时不能修改大纲')
       if (current.status === 'result') throw new Error('请先点击“编辑大纲”后再修改页面')
       const pageIndexes = payload.outlinePages!.map(page => page.index)
-      await tx.delete(workImages).where(and(eq(workImages.workId, id), notInArray(workImages.pageIndex, pageIndexes)))
+      tx.delete(workImages).where(and(eq(workImages.workId, id), notInArray(workImages.pageIndex, pageIndexes))).run()
       const oldByIndex = new Map(current.outlinePages.map(page => [page.index, page]))
       const changedIndexes = payload.outlinePages!.filter(page => {
         const previous = oldByIndex.get(page.index)
         return !previous || previous.content !== page.content || previous.type !== page.type
       }).map(page => page.index)
-      if (changedIndexes.length) await tx.update(workImages).set({ status: 'pending', error: null, inputFingerprint: null, publicUrlStatus: 'unknown', publicUrlCheckedAt: null, updatedAt: new Date() }).where(and(eq(workImages.workId, id), inArray(workImages.pageIndex, changedIndexes)))
-      await tx.update(works).set({ ...payload, updatedAt: new Date() }).where(eq(works.id, id))
+      if (changedIndexes.length) tx.update(workImages).set({ status: 'pending', error: null, inputFingerprint: null, publicUrlStatus: 'unknown', publicUrlCheckedAt: null, updatedAt: new Date() }).where(and(eq(workImages.workId, id), inArray(workImages.pageIndex, changedIndexes))).run()
+      tx.update(works).set({ ...payload, updatedAt: new Date() }).where(eq(works.id, id)).run()
     })
     return getWork(id)
   }
