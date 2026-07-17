@@ -37,13 +37,13 @@ export async function generateOutline(topic: string, images: string[] = [], page
   const pageRequirement = pagePlan.mode === 'exact'
     ? `必须严格生成 ${pagePlan.exactPages} 页。`
     : `请根据主题复杂度智能规划，在 ${pagePlan.minPages}-${pagePlan.maxPages} 页之间生成。`
-  const raw = await textCompletion(`你是一个小红书内容创作专家。请根据用户要求生成图文内容大纲。\n\n用户的要求以及说明：\n${topic}\n\n要求：第一页必须是封面；${pageRequirement} 每页内容具体、适合后续生成图片；严格用 <page> 分隔，每页第一行标注 [封面]、[内容] 或 [总结]；直接从大纲开始，不要解释。${images.length ? '\n用户同时提供了参考图片，请结合图片内容理解主题和视觉方向。' : ''}`, images)
-  const parts = raw.split(/<page>/i).map(item => item.trim()).filter(Boolean)
+  const raw = await textCompletion(`你是一个小红书内容创作专家。请根据用户要求生成图文内容大纲。\n\n用户的要求以及说明：\n${topic}\n\n要求：第一页必须是封面；${pageRequirement} 每页内容具体、适合后续生成图片；只用 <page> 作为页面之间的分隔符，不要输出 </page>；每页第一行标注 [封面]、[内容] 或 [总结]；直接从大纲开始，不要解释。${images.length ? '\n用户同时提供了参考图片，请结合图片内容理解主题和视觉方向。' : ''}`, images)
+  const parts = raw.split(/<\/?page>/i).map(item => item.trim()).filter(Boolean)
   const pages = parts.map((content, index) => ({ index, type: content.startsWith('[封面]') ? 'cover' : content.startsWith('[总结]') ? 'summary' : 'content', content }))
   const parsed = z.array(z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })).min(1).max(18).safeParse(pages)
   const pageCountMatchesPlan = parsed.success && (pagePlan.mode === 'exact' ? parsed.data.length === pagePlan.exactPages : parsed.data.length >= pagePlan.minPages && parsed.data.length <= pagePlan.maxPages)
   if (!pageCountMatchesPlan || parsed.data[0]?.type !== 'cover') throw new Error('文本模型返回的大纲页数或格式不符合本次页数规划，请重试')
-  return { raw, pages: parsed.data }
+  return { raw: parts.join('\n\n<page>\n\n'), pages: parsed.data }
 }
 
 export async function generateNoteContent(topic: string, outline: string) {
