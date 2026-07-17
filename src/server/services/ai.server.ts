@@ -55,7 +55,7 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
   const credentials = await getModelCredentials()
   if (!credentials.imageApiKey) throw new Error('请先在设置中配置图片模型 API Key')
   const maxReferences = model.includes('5-0-pro') ? 10 : 14
-  const response = await fetchWithTimeout('https://ark.cn-beijing.volces.com/api/v3/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${credentials.imageApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, size, ...(referenceImages.length ? { image: referenceImages.slice(0, maxReferences) } : {}) }) }, 90_000, '图片模型请求')
+  const response = await fetchWithTimeout('https://ark.cn-beijing.volces.com/api/v3/images/generations', { method: 'POST', headers: { Authorization: `Bearer ${credentials.imageApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, prompt, size, watermark: false, ...(referenceImages.length ? { image: referenceImages.slice(0, maxReferences) } : {}) }) }, 90_000, '图片模型请求')
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 500).replace(/\s+/g, ' ').trim()
     throw new Error(`图片模型请求失败: ${response.status}${detail ? ` - ${detail}` : ''}`)
