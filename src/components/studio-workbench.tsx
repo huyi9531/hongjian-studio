@@ -159,7 +159,10 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
   const outlineSaveRevision = useRef(0)
 
   useEffect(() => { latestWork.current = work }, [work])
-  useBlocker({ shouldBlockFn: () => stage === 'outline' && (saveStatus === 'saving' || saveStatus === 'error'), enableBeforeUnload: stage === 'outline' && (saveStatus === 'saving' || saveStatus === 'error') })
+  const navigationBlocker = useBlocker({ shouldBlockFn: () => stage === 'outline' && saveStatus === 'saving', withResolver: true, enableBeforeUnload: stage === 'outline' && saveStatus === 'saving' })
+  useEffect(() => {
+    if (navigationBlocker.status === 'blocked' && saveStatus !== 'saving') navigationBlocker.proceed()
+  }, [navigationBlocker, saveStatus])
 
   async function refreshWork() {
     const fresh = await getWorkFn({ data: { workId: work.id } })
@@ -204,7 +207,20 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
   function applyOutlineChange(next: Work) {
     latestWork.current = next
     setWork(next)
+    if (next.outlinePages.some(page => !page.content.trim())) {
+      setSaveStatus('error')
+      setMessage('页面内容不能为空；补充内容后会自动保存。')
+      return
+    }
     void saveOutlineSnapshot(next).catch(() => undefined)
+  }
+
+  function retryOutlineSave() {
+    if (latestWork.current.outlinePages.some(page => !page.content.trim())) {
+      setMessage('页面内容不能为空；请补充内容后再保存。')
+      return
+    }
+    void saveOutline().catch(() => undefined)
   }
 
   function updatePage(index: number, content: string) {
@@ -315,18 +331,19 @@ export function Workbench({ initialWork, preferences }: { initialWork: Work; pre
   }
 
   return <section className="min-h-[calc(100dvh-64px)] px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
-    {stage === 'outline' && <OutlineStage work={work} saveStatus={saveStatus} onUpdate={updatePage} onMove={movePage} onDelete={deletePage} onAdd={addPage} onStart={() => void startGeneration()} />}
+    {stage === 'outline' && <OutlineStage work={work} saveStatus={saveStatus} message={message} onUpdate={updatePage} onMove={movePage} onDelete={deletePage} onAdd={addPage} onRetrySave={retryOutlineSave} onStart={() => void startGeneration()} />}
     {stage === 'generating' && <GenerationStage work={work} images={images} busy={streamBusy} message={message} onBack={() => void beginOutlineEdit()} onRetryAll={() => void runStream('/api/retry-failed')} onRegenerate={index => void regenerate(index)} />}
     {stage === 'result' && <ResultStage work={work} setWork={setWork} images={images} busy={streamBusy} message={message} onPreview={setPreviewUrl} onRegenerate={index => void regenerate(index)} onEditOutline={() => void beginOutlineEdit()} />}
     {previewUrl && <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label="图片预览" onClick={() => setPreviewUrl('')}><button className="absolute top-4 right-4 grid size-11 place-items-center rounded-md text-white hover:bg-white/15" aria-label="关闭预览"><X /></button><img src={previewUrl} alt="大图预览" className="max-h-[90dvh] max-w-full object-contain" /></div>}
   </section>
 }
 
-function OutlineStage({ work, saveStatus, onUpdate, onMove, onDelete, onAdd, onStart }: { work: Work; saveStatus: 'idle' | 'saving' | 'saved' | 'error'; onUpdate: (index: number, content: string) => void; onMove: (from: number, to: number) => void; onDelete: (index: number) => void; onAdd: () => void; onStart: () => void }) {
+function OutlineStage({ work, saveStatus, message, onUpdate, onMove, onDelete, onAdd, onRetrySave, onStart }: { work: Work; saveStatus: 'idle' | 'saving' | 'saved' | 'error'; message: string; onUpdate: (index: number, content: string) => void; onMove: (from: number, to: number) => void; onDelete: (index: number) => void; onAdd: () => void; onRetrySave: () => void; onStart: () => void }) {
   const [dragged, setDragged] = useState<number | null>(null)
   const saveLabel = saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '已自动保存' : saveStatus === 'error' ? '保存失败' : ''
   return <div className="mx-auto max-w-[1280px]">
-    <WorkspacePageHeader className="mb-7" eyebrow={<Link to="/studio" className="hover:text-foreground">创作首页</Link>} title="编辑内容大纲" description={work.topic} status={saveLabel} actions={<Button onClick={onStart}><ImagePlus />开始生成图片</Button>} />
+    <WorkspacePageHeader className="mb-7" eyebrow={<Link to="/studio" className="hover:text-foreground">创作首页</Link>} title="编辑内容大纲" description={work.topic} status={saveLabel} actions={<>{saveStatus === 'error' && <Button variant="outline" onClick={onRetrySave}><RefreshCw />重试保存</Button>}<Button onClick={onStart} disabled={saveStatus === 'saving'}><ImagePlus />开始生成图片</Button></>} />
+    {saveStatus === 'error' && <p className="mb-4 text-sm text-destructive" role="alert">{message || '保存失败，修改尚未同步。'}</p>}
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{work.outlinePages.map((page, index) => <article key={page.index} draggable onDragStart={() => setDragged(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragged !== null) onMove(dragged, index); setDragged(null) }} className="flex aspect-[3/4] min-h-0 flex-col rounded-2xl bg-card p-5">
       <div className="mb-4 flex items-center gap-2"><GripVertical className="size-4 cursor-grab text-muted-foreground" /><span className="text-sm font-medium">第 {index + 1} 页</span><span className="text-xs text-muted-foreground">{page.type === 'cover' ? '封面' : page.type === 'summary' ? '总结' : '内容'}</span><div className="ml-auto flex"><Button size="icon-sm" variant="ghost" aria-label="上移" title="上移" disabled={index === 0} onClick={() => onMove(index, index - 1)}><ArrowUp /></Button><Button size="icon-sm" variant="ghost" aria-label="下移" title="下移" disabled={index === work.outlinePages.length - 1} onClick={() => onMove(index, index + 1)}><ArrowDown /></Button><Button size="icon-sm" variant="ghost" aria-label="删除" title="删除" disabled={work.outlinePages.length <= 1} onClick={() => onDelete(index)}><Trash2 /></Button></div></div>
       <Textarea value={page.content} onChange={event => onUpdate(page.index, event.target.value)} className="min-h-0 flex-1 resize-none border-0 bg-muted p-4 text-sm leading-7 shadow-none focus-visible:border-ring focus-visible:ring-2" /><span className="mt-3 text-right text-xs text-muted-foreground">{page.content.length} 字</span>
