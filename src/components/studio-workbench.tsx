@@ -1,5 +1,5 @@
 import { Link, useBlocker, useNavigate } from '@tanstack/react-router'
-import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, ImagePlus, LoaderCircle, Minus, PencilLine, Plus, RefreshCw, Send, Sparkles, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, ImagePlus, LoaderCircle, PencilLine, Plus, RefreshCw, Send, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/button'
@@ -16,10 +16,6 @@ type Page = Work['outlinePages'][number]
 type Stage = 'outline' | 'generating' | 'result'
 type ImageState = { index: number; id?: string; url: string; status: 'pending' | 'generating' | 'retrying' | 'done' | 'error'; error?: string }
 type SseMessage = { event: string; data: Record<string, unknown> }
-
-function PageStepper({ label, value, min, max, onChange, disabled }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void; disabled: boolean }) {
-  return <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{label}</span><div className="inline-flex h-9 items-center rounded-lg border border-hairline bg-card"><button type="button" aria-label={`减少${label}`} title={`减少${label}`} onClick={() => onChange(value - 1)} disabled={disabled || value <= min} className="grid size-8 place-items-center text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:text-disabled-foreground"><Minus className="size-3.5" /></button><span className="min-w-10 text-center text-sm font-medium tabular-nums">{value} 页</span><button type="button" aria-label={`增加${label}`} title={`增加${label}`} onClick={() => onChange(value + 1)} disabled={disabled || value >= max} className="grid size-8 place-items-center text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:text-disabled-foreground"><Plus className="size-3.5" /></button></div></div>
-}
 
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -98,10 +94,15 @@ export function NewWork() {
     setPreviews(current => [...current, ...accepted.map(file => URL.createObjectURL(file))])
   }
 
-  function removeFile(index: number) {
-    URL.revokeObjectURL(previews[index]!)
-    setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))
-    setPreviews(current => current.filter((_, itemIndex) => itemIndex !== index))
+  function clearFiles() {
+    previews.forEach(URL.revokeObjectURL)
+    setFiles([])
+    setPreviews([])
+  }
+
+  function updatePageCount(setter: (value: number) => void, value: string, min: number, max: number) {
+    const next = Number(value)
+    if (Number.isInteger(next)) setter(Math.min(max, Math.max(min, next)))
   }
 
   async function submit(event?: FormEvent) {
@@ -131,16 +132,12 @@ export function NewWork() {
   return <section className="min-h-[calc(100dvh-64px)] bg-background-home px-4 py-8 sm:px-8 sm:py-10 lg:px-10">
     <div className="mx-auto max-w-[1280px]">
       <WorkspacePageHeader title="新的创作" description="输入一个主题，红笺会先生成可以逐页调整的内容大纲。" />
-      <form onSubmit={submit} className="mt-6 rounded-2xl bg-card p-4 sm:p-6">
-        <div className="rounded-xl bg-muted p-2 sm:p-3">
-          <Textarea value={topic} onChange={event => setTopic(event.target.value)} onKeyDown={handleKeyDown} placeholder="例如：一人食的快速晚餐清单" disabled={busy} className="min-h-44 resize-none border-0 bg-transparent px-3 py-3 text-base shadow-none focus-visible:bg-transparent focus-visible:ring-0" />
-          <div className="mx-3 border-t border-hairline py-3"><div className="flex flex-wrap items-center gap-3"><span className="text-sm font-medium">大纲页数</span><div className="inline-flex rounded-lg bg-card p-1"><button type="button" aria-pressed={pagePlanMode === 'smart'} onClick={() => setPagePlanMode('smart')} disabled={busy} className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${pagePlanMode === 'smart' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>智能规划</button><button type="button" aria-pressed={pagePlanMode === 'exact'} onClick={() => setPagePlanMode('exact')} disabled={busy} className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${pagePlanMode === 'exact' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>精确页数</button></div>{pagePlanMode === 'smart' ? <><PageStepper label="最少" value={minPages} min={2} max={maxPages - 1} onChange={setMinPages} disabled={busy} /><PageStepper label="最多" value={maxPages} min={minPages + 1} max={18} onChange={setMaxPages} disabled={busy} /><span className="text-xs text-muted-foreground">AI 将生成 {minPages}-{maxPages} 页内容大纲</span></> : <><PageStepper label="页数" value={exactPages} min={2} max={18} onChange={setExactPages} disabled={busy} /><span className="text-xs text-muted-foreground">AI 将严格生成 {exactPages} 页内容大纲</span></>}</div></div>
-          {previews.length > 0 && <div className="flex flex-wrap gap-3 px-3 pb-3">{previews.map((preview, index) => <div key={preview} className="relative size-20 overflow-hidden rounded-xl bg-card"><img src={preview} alt={`参考图 ${index + 1}`} className="size-full object-cover" /><button type="button" aria-label={`移除参考图 ${index + 1}`} onClick={() => removeFile(index)} className="absolute top-1 right-1 grid size-7 min-h-0 place-items-center rounded-full bg-black/65 text-white transition-colors hover:bg-black/80"><X className="size-3.5" /></button></div>)}</div>}
-          <div className="flex flex-wrap items-center gap-3 border-t border-hairline px-2 pt-3">
-            <label className="flex h-11 cursor-pointer items-center gap-2 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-card hover:text-foreground" title="添加参考图片"><Upload className="size-5" /><span>添加参考图片</span><input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={busy || files.length >= 5} onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /></label>
-            <span className="w-full text-xs text-muted-foreground sm:mr-auto sm:w-auto">{files.length}/5 · 单张不超过 8MB · 将调用付费模型</span>
-            <Button className="w-full sm:w-auto" type="submit" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}生成大纲</Button>
-          </div>
+      <form onSubmit={submit} className="mt-6 rounded-xl bg-card p-3 shadow-default sm:p-4">
+        <Textarea value={topic} onChange={event => setTopic(event.target.value)} onKeyDown={handleKeyDown} placeholder="例如：一人食的快速晚餐清单" disabled={busy} className="min-h-48 resize-none border-0 bg-transparent px-1 py-1 text-base shadow-none focus-visible:bg-transparent focus-visible:ring-0" />
+        <div className="flex min-h-11 items-center gap-2 border-t border-hairline pt-2">
+          <div className="relative shrink-0"><label className="grid size-10 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title={files.length ? `已添加 ${files.length} 张参考图` : '添加参考图片'}><Upload className="size-4.5" /><input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={busy || files.length >= 5} onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /></label>{files.length > 0 && <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-medium leading-none text-primary-foreground">{files.length}</span>}</div>
+          {files.length > 0 && <button type="button" aria-label="移除全部参考图片" title="移除全部参考图片" onClick={clearFiles} className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><X className="size-3.5" /></button>}
+          <div className="ml-auto flex min-w-0 items-center gap-1.5"><select value={pagePlanMode} aria-label="大纲页数模式" onChange={event => setPagePlanMode(event.target.value as 'smart' | 'exact')} disabled={busy} className="h-9 w-16 rounded-md border-0 bg-muted px-2 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring-soft"><option value="smart">智能</option><option value="exact">精确</option></select>{pagePlanMode === 'smart' ? <div className="flex items-center gap-1 text-xs text-muted-foreground"><input aria-label="最少页数" type="number" min="2" max={maxPages - 1} value={minPages} disabled={busy} onChange={event => updatePageCount(setMinPages, event.target.value, 2, maxPages - 1)} className="h-9 w-8 rounded-md border-0 bg-muted p-0 text-center text-sm font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring-soft" /><span>-</span><input aria-label="最多页数" type="number" min={minPages + 1} max="18" value={maxPages} disabled={busy} onChange={event => updatePageCount(setMaxPages, event.target.value, minPages + 1, 18)} className="h-9 w-8 rounded-md border-0 bg-muted p-0 text-center text-sm font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring-soft" /><span>页</span></div> : <div className="flex items-center gap-1 text-xs text-muted-foreground"><input aria-label="精确页数" type="number" min="2" max="18" value={exactPages} disabled={busy} onChange={event => updatePageCount(setExactPages, event.target.value, 2, 18)} className="h-9 w-8 rounded-md border-0 bg-muted p-0 text-center text-sm font-medium tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring-soft" /><span>页</span></div>}<Button size="icon" type="submit" title="生成大纲（将调用付费模型）" aria-label="生成大纲" className="size-10 shrink-0" disabled={busy || topic.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Send className="size-4" />}</Button></div>
         </div>
         {busy && <p className="mt-4 text-sm text-muted-foreground" role="status">正在生成大纲，通常需要 15–30 秒…</p>}
         {error && <p className="mt-4 text-sm text-destructive" role="alert">{error}</p>}
