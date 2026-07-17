@@ -46,11 +46,15 @@ const referenceSchema = z.object({
   mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
   dataUrl: z.string().max(12_000_000).refine(value => /^data:image\/(png|jpeg|webp);base64,/.test(value), '参考图片格式无效'),
 })
+const outlinePagePlanSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('smart'), minPages: z.number().int().min(2).max(17), maxPages: z.number().int().min(3).max(18) }).refine(value => value.minPages < value.maxPages, { message: '智能规划的最少页数必须小于最多页数' }),
+  z.object({ mode: z.literal('exact'), exactPages: z.number().int().min(2).max(18) }),
+])
 
-export const createWorkFn = createServerFn({ method: 'POST' }).validator(z.object({ topic: z.string().trim().min(2).max(300), references: z.array(referenceSchema).max(5).optional() })).handler(async ({ data }) => {
+export const createWorkFn = createServerFn({ method: 'POST' }).validator(z.object({ topic: z.string().trim().min(2).max(300), references: z.array(referenceSchema).max(5).optional(), outlinePagePlan: outlinePagePlanSchema.optional() })).handler(async ({ data }) => {
   requireAuth()
   const references = data.references ?? []
-  const outline = await generateOutline(data.topic, references.map(reference => reference.dataUrl))
+  const outline = await generateOutline(data.topic, references.map(reference => reference.dataUrl), data.outlinePagePlan)
   const id = await createWork(data.topic, outline.pages, outline.raw, references)
   return getWork(id)
 })

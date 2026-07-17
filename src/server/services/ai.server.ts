@@ -8,6 +8,12 @@ import { getModelCredentials, getStudioPreferences } from './settings.server'
 import type { OutlinePage } from './work.server'
 import type { SeedreamModel, SeedreamSize } from '@/lib/studio-preferences'
 
+export type OutlinePagePlan =
+  | { mode: 'smart'; minPages: number; maxPages: number }
+  | { mode: 'exact'; exactPages: number }
+
+const defaultOutlinePagePlan: OutlinePagePlan = { mode: 'smart', minPages: 3, maxPages: 8 }
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string) {
   try {
     return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
@@ -27,12 +33,16 @@ async function textCompletion(prompt: string, images: string[] = []) {
   return json.choices?.[0]?.message?.content?.trim() ?? ''
 }
 
-export async function generateOutline(topic: string, images: string[] = []): Promise<{ raw: string; pages: OutlinePage[] }> {
-  const raw = await textCompletion(`你是一个小红书内容创作专家。请根据用户要求生成图文内容大纲。\n\n用户的要求以及说明：\n${topic}\n\n要求：第一页必须是封面；用户未指定时默认 5 页，允许 2-18 页；每页内容具体、适合后续生成图片；严格用 <page> 分隔，每页第一行标注 [封面]、[内容] 或 [总结]；直接从大纲开始，不要解释。${images.length ? '\n用户同时提供了参考图片，请结合图片内容理解主题和视觉方向。' : ''}`, images)
+export async function generateOutline(topic: string, images: string[] = [], pagePlan: OutlinePagePlan = defaultOutlinePagePlan): Promise<{ raw: string; pages: OutlinePage[] }> {
+  const pageRequirement = pagePlan.mode === 'exact'
+    ? `必须严格生成 ${pagePlan.exactPages} 页。`
+    : `请根据主题复杂度智能规划，在 ${pagePlan.minPages}-${pagePlan.maxPages} 页之间生成。`
+  const raw = await textCompletion(`你是一个小红书内容创作专家。请根据用户要求生成图文内容大纲。\n\n用户的要求以及说明：\n${topic}\n\n要求：第一页必须是封面；${pageRequirement} 每页内容具体、适合后续生成图片；严格用 <page> 分隔，每页第一行标注 [封面]、[内容] 或 [总结]；直接从大纲开始，不要解释。${images.length ? '\n用户同时提供了参考图片，请结合图片内容理解主题和视觉方向。' : ''}`, images)
   const parts = raw.split(/<page>/i).map(item => item.trim()).filter(Boolean)
   const pages = parts.map((content, index) => ({ index, type: content.startsWith('[封面]') ? 'cover' : content.startsWith('[总结]') ? 'summary' : 'content', content }))
   const parsed = z.array(z.object({ index: z.number().int().min(0), type: z.enum(['cover', 'content', 'summary']), content: z.string().min(1).max(5000) })).min(1).max(18).safeParse(pages)
-  if (!parsed.success || parsed.data[0]?.type !== 'cover') throw new Error('文本模型返回的大纲格式无效：第一页必须是封面，且总页数为 1-18 页')
+  const pageCountMatchesPlan = parsed.success && (pagePlan.mode === 'exact' ? parsed.data.length === pagePlan.exactPages : parsed.data.length >= pagePlan.minPages && parsed.data.length <= pagePlan.maxPages)
+  if (!pageCountMatchesPlan || parsed.data[0]?.type !== 'cover') throw new Error('文本模型返回的大纲页数或格式不符合本次页数规划，请重试')
   return { raw, pages: parsed.data }
 }
 

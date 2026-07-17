@@ -1,5 +1,5 @@
 import { Link, useBlocker, useNavigate } from '@tanstack/react-router'
-import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, ImagePlus, LoaderCircle, PencilLine, Plus, RefreshCw, Send, Sparkles, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, ImagePlus, LoaderCircle, Minus, PencilLine, Plus, RefreshCw, Send, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,10 @@ type Page = Work['outlinePages'][number]
 type Stage = 'outline' | 'generating' | 'result'
 type ImageState = { index: number; id?: string; url: string; status: 'pending' | 'generating' | 'retrying' | 'done' | 'error'; error?: string }
 type SseMessage = { event: string; data: Record<string, unknown> }
+
+function PageStepper({ label, value, min, max, onChange, disabled }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void; disabled: boolean }) {
+  return <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{label}</span><div className="inline-flex h-9 items-center rounded-lg border border-hairline bg-card"><button type="button" aria-label={`减少${label}`} title={`减少${label}`} onClick={() => onChange(value - 1)} disabled={disabled || value <= min} className="grid size-8 place-items-center text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:text-disabled-foreground"><Minus className="size-3.5" /></button><span className="min-w-10 text-center text-sm font-medium tabular-nums">{value} 页</span><button type="button" aria-label={`增加${label}`} title={`增加${label}`} onClick={() => onChange(value + 1)} disabled={disabled || value >= max} className="grid size-8 place-items-center text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:text-disabled-foreground"><Plus className="size-3.5" /></button></div></div>
+}
 
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -73,6 +77,10 @@ export function NewWork() {
   const [previews, setPreviews] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pagePlanMode, setPagePlanMode] = useState<'smart' | 'exact'>('smart')
+  const [minPages, setMinPages] = useState(3)
+  const [maxPages, setMaxPages] = useState(8)
+  const [exactPages, setExactPages] = useState(5)
   const navigate = useNavigate()
   const previewsRef = useRef<string[]>([])
 
@@ -103,7 +111,8 @@ export function NewWork() {
     setError('')
     try {
       const references = await Promise.all(files.map(async file => ({ filename: file.name, mimeType: file.type as 'image/png' | 'image/jpeg' | 'image/webp', dataUrl: await fileToDataUrl(file) })))
-      const work = await createWorkFn({ data: { topic, references } })
+      const outlinePagePlan = pagePlanMode === 'smart' ? { mode: 'smart' as const, minPages, maxPages } : { mode: 'exact' as const, exactPages }
+      const work = await createWorkFn({ data: { topic, references, outlinePagePlan } })
       await navigate({ to: '/studio/$workId', params: { workId: work.id } })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成大纲失败')
@@ -125,6 +134,7 @@ export function NewWork() {
       <form onSubmit={submit} className="mt-6 rounded-2xl bg-card p-4 sm:p-6">
         <div className="rounded-xl bg-muted p-2 sm:p-3">
           <Textarea value={topic} onChange={event => setTopic(event.target.value)} onKeyDown={handleKeyDown} placeholder="例如：一人食的快速晚餐清单" disabled={busy} className="min-h-44 resize-none border-0 bg-transparent px-3 py-3 text-base shadow-none focus-visible:bg-transparent focus-visible:ring-0" />
+          <div className="mx-3 border-t border-hairline py-3"><div className="flex flex-wrap items-center gap-3"><span className="text-sm font-medium">大纲页数</span><div className="inline-flex rounded-lg bg-card p-1"><button type="button" aria-pressed={pagePlanMode === 'smart'} onClick={() => setPagePlanMode('smart')} disabled={busy} className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${pagePlanMode === 'smart' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>智能规划</button><button type="button" aria-pressed={pagePlanMode === 'exact'} onClick={() => setPagePlanMode('exact')} disabled={busy} className={`h-8 rounded-md px-3 text-xs font-medium transition-colors ${pagePlanMode === 'exact' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>精确页数</button></div>{pagePlanMode === 'smart' ? <><PageStepper label="最少" value={minPages} min={2} max={maxPages - 1} onChange={setMinPages} disabled={busy} /><PageStepper label="最多" value={maxPages} min={minPages + 1} max={18} onChange={setMaxPages} disabled={busy} /><span className="text-xs text-muted-foreground">AI 将生成 {minPages}-{maxPages} 页内容大纲</span></> : <><PageStepper label="页数" value={exactPages} min={2} max={18} onChange={setExactPages} disabled={busy} /><span className="text-xs text-muted-foreground">AI 将严格生成 {exactPages} 页内容大纲</span></>}</div></div>
           {previews.length > 0 && <div className="flex flex-wrap gap-3 px-3 pb-3">{previews.map((preview, index) => <div key={preview} className="relative size-20 overflow-hidden rounded-xl bg-card"><img src={preview} alt={`参考图 ${index + 1}`} className="size-full object-cover" /><button type="button" aria-label={`移除参考图 ${index + 1}`} onClick={() => removeFile(index)} className="absolute top-1 right-1 grid size-7 min-h-0 place-items-center rounded-full bg-black/65 text-white transition-colors hover:bg-black/80"><X className="size-3.5" /></button></div>)}</div>}
           <div className="flex flex-wrap items-center gap-3 border-t border-hairline px-2 pt-3">
             <label className="flex h-11 cursor-pointer items-center gap-2 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-card hover:text-foreground" title="添加参考图片"><Upload className="size-5" /><span>添加参考图片</span><input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={busy || files.length >= 5} onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /></label>
