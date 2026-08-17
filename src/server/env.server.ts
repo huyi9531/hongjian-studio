@@ -7,6 +7,7 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(24).optional(),
   DATABASE_URL: z.string().default('file:./data/hongjian.db'),
   DATA_DIR: z.string().default('./data'),
+  PLATFORM: z.enum(['node', 'cloudflare']).default('node'),
   XHS_PUBLISH_API_URL: z.string().url().default('https://plugin.aiconductor.fun/api/xhs_note_publish'),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

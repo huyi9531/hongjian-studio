@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hongjian-studio",
+  "compatibility_date": "2026-08-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "xhs_note_creator",
+      "database_id": "c9ab950a-589b-44fe-b71b-bb277a927570",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "vars": {
+    "PLATFORM": "cloudflare",
+    "XHS_PUBLISH_API_URL": "https://plugin.aiconductor.fun/api/xhs_note_publish",
+    "R2_ENDPOINT": "https://e272e537ba1f48c61e136aac01b11bab.r2.cloudflarestorage.com",
+    "R2_BUCKET_NAME": "aiconductor",
+    "R2_REGION": "auto",
+    "R2_PUBLIC_URL": "https://pub-bfe28bdd0e7c42b79c7c7a241b825d92.r2.dev"
+  }
+}

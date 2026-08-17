@@ -1,6 +1,6 @@
 import '@tanstack/react-start/server-only'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { env } from '../env.server'
@@ -79,18 +79,24 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
   let archiveError: string | undefined
   let archiveMimeType: string | undefined
   let extension = 'png'
+  let downloaded: Buffer | undefined
   try {
     const image = await fetchWithTimeout(sourceUrl, {}, 30_000, '图片归档下载')
     if (image.ok) {
       const contentType = image.headers.get('content-type')?.split(';')[0]
       if (!contentType || !['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) throw new Error('图片归档下载返回了不支持的文件类型')
-      const dir = join(env.DATA_DIR, 'images', workId)
-      await mkdir(dir, { recursive: true })
       extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
-      archivePath = join('images', workId, `${pageIndex}-${randomUUID()}.${extension}`)
-      await writeFile(join(env.DATA_DIR, archivePath), Buffer.from(await image.arrayBuffer()))
-      archiveStatus = 'archived'
+      const bytes = Buffer.from(await image.arrayBuffer())
+      downloaded = bytes
       archiveMimeType = contentType
+      if (env.PLATFORM !== 'cloudflare') {
+        // 本地归档仅在自托管部署启用；Cloudflare 上以 R2 作为图片存储
+        const dir = join(env.DATA_DIR, 'images', workId)
+        await mkdir(dir, { recursive: true })
+        archivePath = join('images', workId, `${pageIndex}-${randomUUID()}.${extension}`)
+        await writeFile(join(env.DATA_DIR, archivePath), bytes)
+        archiveStatus = 'archived'
+      }
     } else {
       archiveError = `图片归档下载失败: ${image.status}`
     }
@@ -100,11 +106,10 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
   }
   // R2 已配置时，生成即上传换取长期公网链接，避免上游临时链接过期导致发布失败
   let publishUrl = sourceUrl
-  if (archiveStatus === 'archived' && archivePath && isR2Configured()) {
+  if (downloaded && isR2Configured()) {
     try {
-      const bytes = await readFile(join(env.DATA_DIR, archivePath))
       const key = `temporary_365/redink/${workId}/${pageIndex}-${randomUUID()}.${extension}`
-      const { url } = await uploadToR2(key, bytes, archiveMimeType ?? 'image/png')
+      const { url } = await uploadToR2(key, downloaded, archiveMimeType ?? 'image/png')
       publishUrl = url
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

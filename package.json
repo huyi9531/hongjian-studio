@@ -10,7 +10,9 @@
     "test": "vitest run",
     "smoke:dev": "node scripts/smoke-dev.mjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
@@ -34,6 +36,8 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.52.1",
+    "@cloudflare/workers-types": "^5.20260817.1",
     "@tanstack/router-devtools": "1.167.0",
     "@tanstack/router-plugin": "1.168.20",
     "@types/better-sqlite3": "7.6.13",
@@ -44,6 +48,7 @@
     "drizzle-kit": "0.31.10",
     "typescript": "7.0.2",
     "vite": "8.1.4",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "wrangler": "^4.123.0"
   }
 }

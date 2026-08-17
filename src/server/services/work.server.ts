@@ -3,9 +3,10 @@ import { and, asc, desc, eq, inArray, like, notInArray } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
-import { db } from '../db/index.server'
+import { db, type LocalDatabase } from '../db/index.server'
 import { generationJobs, publications, workImages, workReferences, works } from '../db/schema'
 import { env } from '../env.server'
+import { r2PublicUrl, uploadToR2 } from './r2.server'
 
 export type OutlinePage = { index: number; type: 'cover' | 'content' | 'summary'; content: string }
 
@@ -26,17 +27,26 @@ export async function createWork(topic: string, pages: OutlinePage[], raw: strin
   try {
     await db.insert(works).values({ id, topic, outlineRaw: raw, outlinePages: pages, status: 'outline', createdAt: now, updatedAt: now })
     if (preparedReferences.length) {
-      await mkdir(join(env.DATA_DIR, 'references', id), { recursive: true })
-      for (const reference of preparedReferences) {
-        await writeFile(join(env.DATA_DIR, reference.archivePath), reference.bytes)
-        await db.insert(workReferences).values({ id: randomUUID(), workId: id, filename: reference.filename, mimeType: reference.mimeType, archivePath: reference.archivePath, createdAt: now })
+      if (env.PLATFORM === 'cloudflare') {
+        // Cloudflare 上参考图存储于 R2，archivePath 记录 R2 key
+        for (const reference of preparedReferences) {
+          const key = `temporary_365/redink-references/${id}/${randomUUID()}${extname(reference.filename).replace(/[^.a-zA-Z0-9]/g, '') || '.png'}`
+          await uploadToR2(key, reference.bytes, reference.mimeType)
+          await db.insert(workReferences).values({ id: randomUUID(), workId: id, filename: reference.filename, mimeType: reference.mimeType, archivePath: key, createdAt: now })
+        }
+      } else {
+        await mkdir(join(env.DATA_DIR, 'references', id), { recursive: true })
+        for (const reference of preparedReferences) {
+          await writeFile(join(env.DATA_DIR, reference.archivePath), reference.bytes)
+          await db.insert(workReferences).values({ id: randomUUID(), workId: id, filename: reference.filename, mimeType: reference.mimeType, archivePath: reference.archivePath, createdAt: now })
+        }
       }
     }
   } catch (cause) {
     await Promise.allSettled([
       db.delete(workReferences).where(eq(workReferences.workId, id)),
       db.delete(works).where(eq(works.id, id)),
-      rm(join(env.DATA_DIR, 'references', id), { recursive: true, force: true }),
+      ...(env.PLATFORM === 'cloudflare' ? [] : [rm(join(env.DATA_DIR, 'references', id), { recursive: true, force: true })]),
     ])
     throw new Error('创建作品时保存参考图片失败', { cause })
   }
@@ -123,6 +133,18 @@ export async function deleteWork(id: string) {
   const [existing] = await db.select({ id: works.id }).from(works).where(eq(works.id, id)).limit(1)
   if (!existing) throw new Error('作品不存在或已被删除')
 
+  if (env.PLATFORM === 'cloudflare') {
+    // Cloudflare 上无本地归档，直接删除数据记录；R2 对象由生命周期策略自动清理
+    await db.transaction(async tx => {
+      await tx.delete(publications).where(eq(publications.workId, id)).run()
+      await tx.delete(generationJobs).where(eq(generationJobs.workId, id)).run()
+      await tx.delete(workReferences).where(eq(workReferences.workId, id)).run()
+      await tx.delete(workImages).where(eq(workImages.workId, id)).run()
+      await tx.delete(works).where(eq(works.id, id)).run()
+    })
+    return
+  }
+
   const dataRoot = resolve(env.DATA_DIR)
   const directories = [resolve(dataRoot, 'images', id), resolve(dataRoot, 'references', id)]
   if (directories.some(directory => !directory.startsWith(`${dataRoot}${sep}`))) throw new Error('作品已删除，但归档目录校验失败')
@@ -140,7 +162,8 @@ export async function deleteWork(id: string) {
         if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause
       }
     }
-    db.transaction(tx => {
+    const local = db as unknown as LocalDatabase
+    local.transaction(tx => {
       tx.delete(publications).where(eq(publications.workId, id)).run()
       tx.delete(generationJobs).where(eq(generationJobs.workId, id)).run()
       tx.delete(workReferences).where(eq(workReferences.workId, id)).run()
@@ -169,22 +192,43 @@ export async function beginOutlineEdit(id: string) {
 
 export async function updateWork(id: string, payload: Partial<Pick<typeof works.$inferInsert, 'topic' | 'outlineRaw' | 'outlinePages' | 'titles' | 'selectedTitle' | 'copywriting' | 'tags'>>) {
   if (payload.outlinePages) {
-    db.transaction(tx => {
-      const current = tx.select({ outlinePages: works.outlinePages, status: works.status }).from(works).where(eq(works.id, id)).get()
-      if (!current) throw new Error('作品不存在')
-      const generationJob = tx.select({ status: generationJobs.status }).from(generationJobs).where(eq(generationJobs.workId, id)).get()
-      if (current.status === 'generating' || generationJob?.status === 'running') throw new Error('图片正在生成，暂时不能修改大纲')
-      if (current.status === 'result') throw new Error('请先点击“编辑大纲”后再修改页面')
-      const pageIndexes = payload.outlinePages!.map(page => page.index)
-      tx.delete(workImages).where(and(eq(workImages.workId, id), notInArray(workImages.pageIndex, pageIndexes))).run()
-      const oldByIndex = new Map(current.outlinePages.map(page => [page.index, page]))
-      const changedIndexes = payload.outlinePages!.filter(page => {
-        const previous = oldByIndex.get(page.index)
-        return !previous || previous.content !== page.content || previous.type !== page.type
-      }).map(page => page.index)
-      if (changedIndexes.length) tx.update(workImages).set({ status: 'pending', error: null, inputFingerprint: null, publicUrlStatus: 'unknown', publicUrlCheckedAt: null, updatedAt: new Date() }).where(and(eq(workImages.workId, id), inArray(workImages.pageIndex, changedIndexes))).run()
-      tx.update(works).set({ ...payload, updatedAt: new Date() }).where(eq(works.id, id)).run()
-    })
+    if (env.PLATFORM === 'cloudflare') {
+      await db.transaction(async tx => {
+        const current = await tx.select({ outlinePages: works.outlinePages, status: works.status }).from(works).where(eq(works.id, id)).get()
+        if (!current) throw new Error('作品不存在')
+        const generationJob = await tx.select({ status: generationJobs.status }).from(generationJobs).where(eq(generationJobs.workId, id)).get()
+        if (current.status === 'generating' || generationJob?.status === 'running') throw new Error('图片正在生成，暂时不能修改大纲')
+        if (current.status === 'result') throw new Error('请先点击“编辑大纲”后再修改页面')
+        const pageIndexes = payload.outlinePages!.map(page => page.index)
+        await tx.delete(workImages).where(and(eq(workImages.workId, id), notInArray(workImages.pageIndex, pageIndexes))).run()
+        const oldByIndex = new Map(current.outlinePages.map(page => [page.index, page]))
+        const changedIndexes = payload.outlinePages!.filter(page => {
+          const previous = oldByIndex.get(page.index)
+          return !previous || previous.content !== page.content || previous.type !== page.type
+        }).map(page => page.index)
+        if (changedIndexes.length) await tx.update(workImages).set({ status: 'pending', error: null, inputFingerprint: null, publicUrlStatus: 'unknown', publicUrlCheckedAt: null, updatedAt: new Date() }).where(and(eq(workImages.workId, id), inArray(workImages.pageIndex, changedIndexes))).run()
+        await tx.update(works).set({ ...payload, updatedAt: new Date() }).where(eq(works.id, id)).run()
+      })
+    } else {
+      // 本地 better-sqlite3 原生事务要求同步回调
+      const local = db as unknown as LocalDatabase
+      local.transaction(tx => {
+        const current = tx.select({ outlinePages: works.outlinePages, status: works.status }).from(works).where(eq(works.id, id)).get()
+        if (!current) throw new Error('作品不存在')
+        const generationJob = tx.select({ status: generationJobs.status }).from(generationJobs).where(eq(generationJobs.workId, id)).get()
+        if (current.status === 'generating' || generationJob?.status === 'running') throw new Error('图片正在生成，暂时不能修改大纲')
+        if (current.status === 'result') throw new Error('请先点击“编辑大纲”后再修改页面')
+        const pageIndexes = payload.outlinePages!.map(page => page.index)
+        tx.delete(workImages).where(and(eq(workImages.workId, id), notInArray(workImages.pageIndex, pageIndexes))).run()
+        const oldByIndex = new Map(current.outlinePages.map(page => [page.index, page]))
+        const changedIndexes = payload.outlinePages!.filter(page => {
+          const previous = oldByIndex.get(page.index)
+          return !previous || previous.content !== page.content || previous.type !== page.type
+        }).map(page => page.index)
+        if (changedIndexes.length) tx.update(workImages).set({ status: 'pending', error: null, inputFingerprint: null, publicUrlStatus: 'unknown', publicUrlCheckedAt: null, updatedAt: new Date() }).where(and(eq(workImages.workId, id), inArray(workImages.pageIndex, changedIndexes))).run()
+        tx.update(works).set({ ...payload, updatedAt: new Date() }).where(eq(works.id, id)).run()
+      })
+    }
     return getWork(id)
   }
   await db.update(works).set({ ...payload, updatedAt: new Date() }).where(eq(works.id, id))
@@ -202,8 +246,9 @@ export async function upsertImage(workId: string, pageIndex: number, data: Parti
 export async function getReferenceDataUrls(workId: string) {
   const references = await db.select().from(workReferences).where(eq(workReferences.workId, workId)).orderBy(asc(workReferences.createdAt))
   return Promise.all(references.map(async reference => {
-    const bytes = await readFile(join(env.DATA_DIR, reference.archivePath))
-    return `data:${reference.mimeType};base64,${bytes.toString('base64')}`
+    if (env.PLATFORM === 'cloudflare') return r2PublicUrl(reference.archivePath)
+    const base64 = await readFile(join(env.DATA_DIR, reference.archivePath), 'base64')
+    return `data:${reference.mimeType};base64,${base64}`
   }))
 }
 
