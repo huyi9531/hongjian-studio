@@ -8,6 +8,12 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default('file:./data/hongjian.db'),
   DATA_DIR: z.string().default('./data'),
   XHS_PUBLISH_API_URL: z.string().url().default('https://plugin.aiconductor.fun/api/xhs_note_publish'),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_ENDPOINT: z.string().url().optional(),
+  R2_BUCKET_NAME: z.string().optional(),
+  R2_REGION: z.string().default('auto'),
+  R2_PUBLIC_URL: z.string().url().optional(),
 })
 
 const normalizedEnvironment = Object.fromEntries(

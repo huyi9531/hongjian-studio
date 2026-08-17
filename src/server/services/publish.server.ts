@@ -1,10 +1,13 @@
 import '@tanstack/react-start/server-only'
 import { createHash, randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db/index.server'
 import { publications } from '../db/schema'
 import { env } from '../env.server'
-import { getWork, refreshWorkPublicUrlStatus, setWorkStatus } from './work.server'
+import { getWork, refreshWorkPublicUrlStatus, setWorkStatus, upsertImage } from './work.server'
+import { isR2Configured, uploadToR2 } from './r2.server'
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string) {
   try {
@@ -32,19 +35,59 @@ export function publicationFingerprint(title: string, content: string, images: s
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
+type WorkImage = Awaited<ReturnType<typeof getWork>>['images'][number]
+
+function archiveExtension(image: WorkImage) {
+  if (image.archiveMimeType === 'image/jpeg') return 'jpg'
+  if (image.archiveMimeType === 'image/webp') return 'webp'
+  return 'png'
+}
+
+/**
+ * 将公网链接已失效但本地归档完整的图片重新上传到 R2（temporary_365/ 前缀，365 天有效），
+ * 并把新的长期公网 URL 写回作品图片记录。返回是否全部恢复成功。
+ */
+async function restoreExpiredImages(work: Awaited<ReturnType<typeof getWork>>) {
+  const expired = work.images.filter(image =>
+    image.publicUrlStatus === 'unavailable' &&
+    image.status === 'done' &&
+    Boolean(image.inputFingerprint) &&
+    image.archiveStatus === 'archived' &&
+    Boolean(image.archivePath),
+  )
+  if (!expired.length || !isR2Configured()) return false
+  const results = await Promise.all(expired.map(async image => {
+    try {
+      const bytes = await readFile(join(env.DATA_DIR, image.archivePath!))
+      const key = `temporary_365/redink/${image.workId}/${image.pageIndex}-${randomUUID()}.${archiveExtension(image)}`
+      const { url } = await uploadToR2(key, bytes, image.archiveMimeType ?? 'image/png')
+      await upsertImage(image.workId, image.pageIndex, { sourceUrl: url, publicUrlStatus: 'available', publicUrlCheckedAt: new Date() })
+      return true
+    } catch (error) {
+      console.warn('R2 image restore failed; keeping the archived copy.', { workId: work.id, pageIndex: image.pageIndex, error: error instanceof Error ? error.message : String(error) })
+      return false
+    }
+  }))
+  return results.every(Boolean)
+}
+
 export async function publishWork(workId: string, title: string, content: string) {
   if (!env.AICONDUCTOR_API_KEY) throw new Error('扫码发布 API Key 未配置')
   if (weightedTitleLength(title) > 20) throw new Error('标题超过 20 字限制')
   if (content.length > 1000) throw new Error('正文超过 1000 字限制')
   await refreshWorkPublicUrlStatus(workId, true)
-  const work = await getWork(workId)
+  let work = await getWork(workId)
   if (work.images.length !== work.outlinePages.length || work.images.some(image => image.status !== 'done' || !image.inputFingerprint || !image.sourceUrl)) throw new Error('图片尚未完成或属于历史未校验结果，请重新生成后再发布')
+  if (work.publishability !== 'publishable') {
+    // 公网链接过期但本地归档完整时，自动补传 R2 换取长期公网链接后再发布
+    if (work.publishability === 'unpublishable' && (await restoreExpiredImages(work))) work = await getWork(workId)
+    if (work.publishability !== 'publishable') {
+      if (work.publishability === 'unpublishable') await setWorkStatus(workId, 'unpublishable')
+      throw new Error('图片公网链接已失效。当前仅保留本地归档，请重新生成图片后再发布')
+    }
+  }
   const images = work.images.map(image => image.sourceUrl).filter((url): url is string => Boolean(url))
   if (!images.length || images.length > 18) throw new Error('需要 1-18 张带公网 URL 的图片，旧作品请重新生成')
-  if (work.publishability !== 'publishable') {
-    if (work.publishability === 'unpublishable') await setWorkStatus(workId, 'unpublishable')
-    throw new Error('图片公网链接已失效。当前仅保留本地归档，请重新生成图片后再发布')
-  }
   const fingerprint = publicationFingerprint(title, content, images)
   const compatibleFingerprints = [
     fingerprint,
