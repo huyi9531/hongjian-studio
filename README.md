@@ -33,11 +33,11 @@ npm run start
 
 构建与部署：`npm run deploy`（等价于 `vite build --mode cloudflare && wrangler deploy`），推送到 GitHub `master` 分支后由 Actions 自动部署到 https://hongjian-studio.mhtm9531.workers.dev 。本地开发保持 node 模式（SQLite），仅 `--mode cloudflare` 构建 Worker 目标。
 
-数据库使用 D1（`xhs_note_creator`），表结构由 `drizzle/` 迁移目录管理。**CI 不自动应用迁移**，修改数据库结构后需手动执行：
+数据库使用 D1（`xhs_note_creator`），表结构由 `drizzle/` 迁移目录管理，**CI 部署时自动应用未执行的迁移**。修改数据库结构后提交即可：
 
 ```bash
-npx drizzle-kit generate   # 生成新迁移 SQL
-npx wrangler d1 migrations apply xhs_note_creator --remote   # 应用到线上 D1
+npx drizzle-kit generate   # 本地生成新迁移 SQL，随代码提交
+# push 后 CI 自动执行 wrangler d1 migrations apply --remote
 ```
 
 本地 SQLite 数据迁移到线上 D1 的脚本：`node scripts/migrate-to-d1.mjs`（需先在环境变量中提供 R2 凭证，`.env.local` 中已配置）。
