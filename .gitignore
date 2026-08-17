@@ -30,4 +30,3 @@ DEV_NOTES.md
 commit_message.txt
 git-changelog.txt
 .wrangler/
-worker-configuration.d.ts
