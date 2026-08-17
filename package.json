@@ -11,7 +11,7 @@
     "smoke:dev": "node scripts/smoke-dev.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "vite build --mode cloudflare && wrangler deploy",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
