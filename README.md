@@ -29,6 +29,19 @@ npm run build
 npm run start
 ```
 
+## Cloudflare Workers 部署
+
+构建与部署：`npm run deploy`（等价于 `vite build --mode cloudflare && wrangler deploy`），推送到 GitHub `master` 分支后由 Actions 自动部署到 https://hongjian-studio.mhtm9531.workers.dev 。本地开发保持 node 模式（SQLite），仅 `--mode cloudflare` 构建 Worker 目标。
+
+数据库使用 D1（`xhs_note_creator`），表结构由 `drizzle/` 迁移目录管理。**CI 不自动应用迁移**，修改数据库结构后需手动执行：
+
+```bash
+npx drizzle-kit generate   # 生成新迁移 SQL
+npx wrangler d1 migrations apply xhs_note_creator --remote   # 应用到线上 D1
+```
+
+本地 SQLite 数据迁移到线上 D1 的脚本：`node scripts/migrate-to-d1.mjs`（需先在环境变量中提供 R2 凭证，`.env.local` 中已配置）。
+
 ## 模型与环境配置
 
 在设置页选择 Doubao Seed 2.1 Pro 或 Turbo 作为文本模型，并分别配置文本模型与 Seedream 图片模型的方舟 API Key。文本模型可独立开启深度思考；关闭时发送 `thinking.type=disabled`，开启时发送 `thinking.type=enabled`。参考图片会以方舟 Chat API 支持的 Base64 `image_url` 格式发送给所选文本模型。
