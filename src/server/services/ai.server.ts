@@ -1,10 +1,11 @@
 import '@tanstack/react-start/server-only'
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { env } from '../env.server'
 import { getModelCredentials, getStudioPreferences } from './settings.server'
+import { isR2Configured, uploadToR2 } from './r2.server'
 import type { OutlinePage } from './work.server'
 import type { SeedreamModel, SeedreamSize } from '@/lib/studio-preferences'
 
@@ -77,6 +78,7 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
   let archiveStatus: 'archived' | 'unavailable' = 'unavailable'
   let archiveError: string | undefined
   let archiveMimeType: string | undefined
+  let extension = 'png'
   try {
     const image = await fetchWithTimeout(sourceUrl, {}, 30_000, '图片归档下载')
     if (image.ok) {
@@ -84,7 +86,7 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
       if (!contentType || !['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) throw new Error('图片归档下载返回了不支持的文件类型')
       const dir = join(env.DATA_DIR, 'images', workId)
       await mkdir(dir, { recursive: true })
-      const extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
+      extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png'
       archivePath = join('images', workId, `${pageIndex}-${randomUUID()}.${extension}`)
       await writeFile(join(env.DATA_DIR, archivePath), Buffer.from(await image.arrayBuffer()))
       archiveStatus = 'archived'
@@ -96,5 +98,19 @@ export async function generateSeedreamImage(prompt: string, model: SeedreamModel
     archiveError = error instanceof Error ? error.message : String(error)
     console.warn('Image archive failed; retaining the original provider URL.', { workId, pageIndex, error: error instanceof Error ? error.message : String(error) })
   }
-  return { sourceUrl, archivePath, archiveStatus, archiveError, archiveMimeType }
+  // R2 已配置时，生成即上传换取长期公网链接，避免上游临时链接过期导致发布失败
+  let publishUrl = sourceUrl
+  if (archiveStatus === 'archived' && archivePath && isR2Configured()) {
+    try {
+      const bytes = await readFile(join(env.DATA_DIR, archivePath))
+      const key = `temporary_365/redink/${workId}/${pageIndex}-${randomUUID()}.${extension}`
+      const { url } = await uploadToR2(key, bytes, archiveMimeType ?? 'image/png')
+      publishUrl = url
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('R2 image upload failed; the page will be retried.', { workId, pageIndex, error: message })
+      throw new Error(`R2 图片上传失败，请重试: ${message}`)
+    }
+  }
+  return { sourceUrl: publishUrl, archivePath, archiveStatus, archiveError, archiveMimeType }
 }
