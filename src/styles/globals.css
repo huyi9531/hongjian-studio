@@ -30,6 +30,12 @@
   --success: #00ab46;
   --warning: #fd6321;
   --disabled-foreground: rgba(0, 0, 0, 0.2);
+  --scale-page-title: 1.625rem;
+  --scale-page-title-leading: 2rem;
+  --scale-page-title-tracking: -0.01em;
+  --scale-eyebrow: 0.6875rem;
+  --scale-eyebrow-tracking: 0.08em;
+  --folio-variant: tabular-nums;
   --radius: 1.25rem;
   --workspace-shadow-default: 0 1px 8px 0 rgba(0, 0, 0, 0.09);
   --workspace-shadow-drawer: 0 9px 20px 0 rgba(0, 0, 0, 0.09);
@@ -69,6 +75,7 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-2xl: 1.25rem;
+  --default-transition-duration: 180ms;
   --shadow-default: var(--workspace-shadow-default);
   --shadow-drawer: var(--workspace-shadow-drawer);
 }
@@ -80,6 +87,7 @@ button, input, textarea { font: inherit; letter-spacing: 0; }
 button, a, label { -webkit-tap-highlight-color: transparent; }
 button { min-height: 44px; }
 img { display: block; }
+.font-folio { font-variant-numeric: var(--folio-variant); }
 ::selection { background: rgb(255 36 66 / 0.14); }
 :focus-visible { outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; } }
