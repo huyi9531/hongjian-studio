@@ -9,7 +9,7 @@
 ## Color Tokens
 
 | Role | Value | CSS token |
-|---|---|---|
+| --- | --- | --- |
 | Standard canvas | `#f7f7f7` | `--background` |
 | Creation home canvas | `#eef1f8` | `--background-home` |
 | Content surface | `#ffffff` | `--card` |
@@ -39,7 +39,7 @@ font-family: RedNum, RedZh, RedEn, "PingFang SC", "Noto Sans SC",
 ```
 
 | Role | Size / line-height | Weight |
-|---|---|---|
+| --- | --- | --- |
 | Page title | `24px / 32px` | 600 |
 | Section title | `18px / 26px` | 600 |
 | Card title | `16px / 24px` | 500 |
@@ -154,6 +154,40 @@ Letter spacing remains `0`. Operational pages must not use marketing-scale displ
 - Use the same 64px brand header and standard canvas.
 - Center one white 20px authentication panel.
 - Do not use a marketing hero or split-screen landing layout.
+
+## 编辑部质感
+
+红笺的贵感策略是"编辑部质感"：克制系统设计不变，把决策密度与文化编码做进每个触点，让界面像被一位编辑整理过，而不是偶发好看。
+
+### Editorial Scale Tokens
+
+- `--scale-page-title` 26px / `--scale-page-title-leading` 2rem / `--scale-page-title-tracking` -0.01em：单页主标题紧排字阶，仅用于页面标题，不放大营销标题。
+- `--scale-eyebrow` 11px / `--scale-eyebrow-tracking` 0.08em：眉题字阶，页面标题上方的分区/步骤标记（如 `创作 · 步骤 02`、`红笺 · 归档`）。中文不受 uppercase 影响，0.08em 字距制造编辑感。
+- `.font-folio`：tabular-nums 等宽数字，用于页码（`PG 01 / 05`）、作品卡日期等对象数字。
+- `--default-transition-duration: 180ms`：统一全部微动效时长的默认值（覆盖 Tailwind 默认 150ms）。
+
+### 眉题系统
+
+所有 `WorkspacePageHeader` 页面的 `eyebrow` 输出为编辑部眉题，构成跨页面的可识别规则：
+
+| 页面 | 眉题 |
+| --- | --- |
+| 新建创作 | 红笺 · 创作 |
+| 大纲 | 创作首页 · 步骤 02（可点击返回） |
+| 生成 | 创作 · 步骤 03 |
+| 结果 | 创作 · 步骤 04 |
+| 作品 | 红笺 · 归档 |
+| 设置 | 红笺 · 配置 |
+
+### 页码编码
+
+大纲编辑页每张卡片用编辑部页码替代裸序号：`封面 · PG 01`、`正文 · PG 02`、`总结 · PG 05`，页码使用 `.font-folio` 等宽数字并附 `/ 总页数`。
+
+### 文案姿态
+
+- 操作词保持克制（开始生成、保存、重新生成），不加营销话术。
+- "只承载人"的句子只出现在非操作位置：登录副句（"输入密码，回到你的工作台。"）、新建页描述、空状态说明（如作品空状态副句）。
+- 空状态统一走 `src/components/ui/empty-state.tsx` 原语（图标 + 标题 + 一段说明 + 主收行动作，20px 圆角白卡，带 `role="status"`），不要内联重复。
 
 ## Do
 
