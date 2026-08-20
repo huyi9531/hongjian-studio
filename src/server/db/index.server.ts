@@ -72,7 +72,9 @@ async function createLocalDatabase() {
 
 /** Cloudflare Workers 上通过 D1 binding 访问数据库，表结构由 wrangler d1 migrations 管理 */
 async function createCloudflareDatabase() {
-  const { env: cfEnv } = await import('cloudflare:workers')
+  // cloudflare:workers 仅在 Cloudflare Worker 平台由 workerd 运行时提供；node 本地构建不加载该模块，
+  // 用 @vite-ignore 让 bundler 跳过静态解析，避免 node 模式构建失败。此分支仅在 PLATFORM=cloudflare 时执行。
+  const { env: cfEnv } = await import(/* @vite-ignore */ 'cloudflare:workers')
   return createD1Drizzle(cfEnv.DB, { schema })
 }
 
